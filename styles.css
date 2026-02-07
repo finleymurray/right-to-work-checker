@@ -539,6 +539,16 @@ main.container {
 .export-row:last-child {
   margin-bottom: 0;
 }
+.export-desc {
+  font-size: 13px;
+  color: var(--ho-grey);
+  margin-bottom: 12px;
+}
+.export-progress {
+  font-size: 13px;
+  color: var(--ho-grey);
+  font-style: italic;
+}
 .export-row label {
   font-size: 14px;
   font-weight: 700;

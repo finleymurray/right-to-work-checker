@@ -2,7 +2,7 @@ import { fetchAllRecords } from '../services/records-service.js';
 import { refreshStatuses, STATUS_LABELS, STATUS_CLASSES } from '../services/status-service.js';
 import { formatDateShort } from '../utils/date-utils.js';
 import { METHOD_LABELS } from '../utils/document-labels.js';
-import { exportToExcel } from '../utils/excel-export.js';
+import { exportToZip } from '../utils/excel-export.js';
 
 const ATTENTION_STATUSES = ['follow_up_due', 'expired', 'follow_up_overdue'];
 const DANGER_STATUSES = ['expired', 'follow_up_overdue'];
@@ -259,9 +259,11 @@ function buildDashboardHTML(records) {
     </table>
 
     <div class="export-section">
-      <h3>Export to Excel</h3>
+      <h3>Export Records</h3>
+      <p class="export-desc">Download a ZIP containing an Excel spreadsheet and all document scans.</p>
       <div class="export-row">
         <button type="button" class="btn btn-secondary" id="export-all-btn">Export all records</button>
+        <span class="export-progress" id="export-progress"></span>
       </div>
       <div class="export-row">
         <label for="export-from">From</label>
@@ -332,13 +334,39 @@ function attachEventListeners(el) {
     });
   });
 
+  // Export helpers
+  const progressEl = el.querySelector('#export-progress');
+
+  function setExportBtns(disabled) {
+    const btns = el.querySelectorAll('#export-all-btn, #export-range-btn');
+    btns.forEach(b => b.disabled = disabled);
+  }
+
+  function showProgress(current, total) {
+    if (progressEl) {
+      progressEl.textContent = `Fetching scans\u2026 ${current}/${total}`;
+    }
+  }
+
+  async function runExport(records, baseName) {
+    setExportBtns(true);
+    if (progressEl) progressEl.textContent = 'Preparing export\u2026';
+    try {
+      await exportToZip(records, baseName, showProgress);
+    } catch (err) {
+      alert('Export failed: ' + err.message);
+    }
+    if (progressEl) progressEl.textContent = '';
+    setExportBtns(false);
+  }
+
   // Export buttons
   const exportAllBtn = el.querySelector('#export-all-btn');
   if (exportAllBtn) {
     exportAllBtn.addEventListener('click', () => {
       if (allRecords.length === 0) return;
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      exportToExcel(allRecords, `RTW_Records_All_${dateStr}.xlsx`);
+      runExport(allRecords, `RTW_Records_All_${dateStr}`);
     });
   }
 
@@ -369,7 +397,7 @@ function attachEventListeners(el) {
 
       const fromStr = from ? from.replace(/-/g, '') : 'start';
       const toStr = to ? to.replace(/-/g, '') : 'end';
-      exportToExcel(filtered, `RTW_Records_${fromStr}_to_${toStr}.xlsx`);
+      runExport(filtered, `RTW_Records_${fromStr}_to_${toStr}`);
     });
   }
 }

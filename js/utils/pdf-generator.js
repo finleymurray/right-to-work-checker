@@ -1,5 +1,6 @@
 import { formatDateUK } from './date-utils.js';
 import { getDocumentLabels, METHOD_LABELS, STEP2_QUESTIONS } from './document-labels.js';
+import { LOGO_WHITE_B64, LOGO_DARK_B64 } from './logo-data.js';
 
 /**
  * Generate and download a compliance PDF for a given RTW record.
@@ -67,36 +68,10 @@ export function generatePDF(record, scanDataUrl) {
 
   // -------- Logo helper --------
   function drawLogo(x, yPos, onDark) {
-    const boxW = 48;
-    const boxH = 10;
-
-    // "IMMERSIVE" text
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    if (onDark) {
-      doc.setTextColor(255, 255, 255);
-    } else {
-      doc.setTextColor(...dark);
-    }
-    doc.text('IMMERSIVE', x, yPos);
-
-    // Box behind "CORE"
-    const coreY = yPos + 1.5;
-    if (onDark) {
-      doc.setFillColor(255, 255, 255);
-    } else {
-      doc.setFillColor(...dark);
-    }
-    doc.rect(x, coreY, boxW, boxH, 'F');
-
-    // "CORE" text inside box
-    doc.setFontSize(9);
-    if (onDark) {
-      doc.setTextColor(...blue);
-    } else {
-      doc.setTextColor(255, 255, 255);
-    }
-    doc.text('C  O  R  E', x + boxW / 2, coreY + boxH * 0.72, { align: 'center' });
+    const logoData = onDark ? LOGO_WHITE_B64 : LOGO_DARK_B64;
+    const logoH = 14;
+    const logoW = 14; // square logo
+    doc.addImage(logoData, 'PNG', x, yPos - 4, logoW, logoH);
   }
 
   // ======== PAGE 1 ========

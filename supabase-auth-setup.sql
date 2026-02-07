@@ -95,7 +95,16 @@ ALTER TABLE rtw_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 
--- 7. RLS Policies — rtw_records
+-- 7. Helper function for role checks (avoids infinite recursion in RLS policies)
+CREATE OR REPLACE FUNCTION public.is_manager()
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'manager'
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- 8. RLS Policies — rtw_records
 DROP POLICY IF EXISTS "auth_select_records" ON rtw_records;
 CREATE POLICY "auth_select_records"
   ON rtw_records FOR SELECT TO authenticated USING (true);
@@ -111,9 +120,7 @@ CREATE POLICY "auth_update_records"
 DROP POLICY IF EXISTS "manager_delete_records" ON rtw_records;
 CREATE POLICY "manager_delete_records"
   ON rtw_records FOR DELETE TO authenticated
-  USING (
-    EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'manager')
-  );
+  USING (public.is_manager());
 
 -- 8. RLS Policies — profiles
 DROP POLICY IF EXISTS "users_read_own_profile" ON profiles;
@@ -123,9 +130,7 @@ CREATE POLICY "users_read_own_profile"
 DROP POLICY IF EXISTS "managers_read_all_profiles" ON profiles;
 CREATE POLICY "managers_read_all_profiles"
   ON profiles FOR SELECT TO authenticated
-  USING (
-    EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'manager')
-  );
+  USING (public.is_manager());
 
 DROP POLICY IF EXISTS "users_update_own_profile" ON profiles;
 CREATE POLICY "users_update_own_profile"
@@ -137,9 +142,7 @@ CREATE POLICY "users_update_own_profile"
 DROP POLICY IF EXISTS "managers_read_audit" ON audit_log;
 CREATE POLICY "managers_read_audit"
   ON audit_log FOR SELECT TO authenticated
-  USING (
-    EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'manager')
-  );
+  USING (public.is_manager());
 
 DROP POLICY IF EXISTS "auth_insert_audit" ON audit_log;
 CREATE POLICY "auth_insert_audit"

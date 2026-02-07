@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Right to Work Checker</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="header">
+  <div class="container header-inner">
+    <a href="#/" class="header-link">
+      <h1>Right to Work Checker</h1>
+    </a>
+    <span class="header-sub">UK Employer Compliance Records</span>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="#/" class="nav-link">Dashboard</a>
+    <a href="#/new" class="nav-link btn-nav">+ New Check</a>
+  </div>
+</nav>
+
+<main class="container" id="app">
+  <div class="loading">Loading...</div>
+</main>
+
+<!-- CDN dependencies -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script type="module" src="app.js"></script>
+
+</body>
+</html>

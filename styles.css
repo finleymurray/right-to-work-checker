@@ -516,6 +516,40 @@ main.container {
   padding: 6px 8px;
 }
 
+/* ---- Export section ---- */
+.export-section {
+  margin-top: 24px;
+  padding: 16px 20px;
+  background: #fff;
+  border: 1px solid var(--ho-border);
+  border-radius: 2px;
+}
+.export-section h3 {
+  font-size: 15px;
+  margin-bottom: 12px;
+  color: var(--ho-dark);
+}
+.export-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.export-row:last-child {
+  margin-bottom: 0;
+}
+.export-row label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ho-dark);
+}
+.export-row input[type="date"] {
+  padding: 6px 8px;
+  border: 2px solid var(--ho-dark);
+  font-size: 14px;
+}
+
 /* ---- Table ---- */
 .records-table {
   width: 100%;
@@ -676,6 +710,17 @@ main.container {
   background: #fde7e4;
   border-left: 4px solid var(--ho-red);
   color: #d4351c;
+}
+
+.info-banner {
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 16px;
+  border-radius: 2px;
+  background: #e8f0fe;
+  border-left: 4px solid var(--ho-blue);
+  color: var(--ho-blue);
 }
 
 .scan-display {

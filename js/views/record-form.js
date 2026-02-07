@@ -101,6 +101,17 @@ export async function render(el, recordId) {
 
   if (isEdit) {
     existing = await fetchRecord(recordId);
+
+    // Enforce 5-minute edit lock
+    const createdAt = existing.created_at ? new Date(existing.created_at) : null;
+    if (createdAt && (Date.now() - createdAt.getTime() > 5 * 60 * 1000)) {
+      el.innerHTML = `
+        <div class="info-banner" style="margin-top:20px;">
+          This record can no longer be edited. Records are locked 5 minutes after submission.
+        </div>
+        <a href="#/record/${recordId}" class="btn btn-secondary" style="margin-top:12px;">Back to record</a>`;
+      return;
+    }
   }
 
   const today = todayISO();

@@ -2,6 +2,7 @@ import { fetchAllRecords } from '../services/records-service.js';
 import { refreshStatuses, STATUS_LABELS, STATUS_CLASSES } from '../services/status-service.js';
 import { formatDateShort } from '../utils/date-utils.js';
 import { METHOD_LABELS } from '../utils/document-labels.js';
+import { exportToExcel } from '../utils/excel-export.js';
 
 const ATTENTION_STATUSES = ['follow_up_due', 'expired', 'follow_up_overdue'];
 const DANGER_STATUSES = ['expired', 'follow_up_overdue'];
@@ -255,7 +256,21 @@ function buildDashboardHTML(records) {
       <tbody id="dashboard-tbody">
         ${tbodyHTML}
       </tbody>
-    </table>`;
+    </table>
+
+    <div class="export-section">
+      <h3>Export to Excel</h3>
+      <div class="export-row">
+        <button type="button" class="btn btn-secondary" id="export-all-btn">Export all records</button>
+      </div>
+      <div class="export-row">
+        <label for="export-from">From</label>
+        <input type="date" id="export-from">
+        <label for="export-to">To</label>
+        <input type="date" id="export-to">
+        <button type="button" class="btn btn-secondary" id="export-range-btn">Export date range</button>
+      </div>
+    </div>`;
 }
 
 /**
@@ -316,6 +331,47 @@ function attachEventListeners(el) {
       updateTableBody(el);
     });
   });
+
+  // Export buttons
+  const exportAllBtn = el.querySelector('#export-all-btn');
+  if (exportAllBtn) {
+    exportAllBtn.addEventListener('click', () => {
+      if (allRecords.length === 0) return;
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      exportToExcel(allRecords, `RTW_Records_All_${dateStr}.xlsx`);
+    });
+  }
+
+  const exportRangeBtn = el.querySelector('#export-range-btn');
+  if (exportRangeBtn) {
+    exportRangeBtn.addEventListener('click', () => {
+      const fromInput = el.querySelector('#export-from');
+      const toInput = el.querySelector('#export-to');
+      const from = fromInput ? fromInput.value : '';
+      const to = toInput ? toInput.value : '';
+
+      if (!from && !to) {
+        alert('Please select at least a start or end date.');
+        return;
+      }
+
+      const filtered = allRecords.filter(r => {
+        const d = r.check_date || '';
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        alert('No records found in the selected date range.');
+        return;
+      }
+
+      const fromStr = from ? from.replace(/-/g, '') : 'start';
+      const toStr = to ? to.replace(/-/g, '') : 'end';
+      exportToExcel(filtered, `RTW_Records_${fromStr}_to_${toStr}.xlsx`);
+    });
+  }
 }
 
 /**

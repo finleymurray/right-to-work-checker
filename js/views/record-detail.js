@@ -212,7 +212,11 @@ export async function render(el, recordId) {
     'I confirm that I have carried out the right to work check in compliance with ' +
     'Home Office instructions and believe a valid statutory excuse is established.';
 
-  // 5. Render the full view
+  // 5. Check edit lock (5 minutes after creation)
+  const createdAt = record.created_at ? new Date(record.created_at) : null;
+  const editLocked = createdAt && (Date.now() - createdAt.getTime() > 5 * 60 * 1000);
+
+  // 6. Render the full view
   el.innerHTML = `
     <div class="record-detail">
       <div class="detail-header">
@@ -221,11 +225,14 @@ export async function render(el, recordId) {
           <span class="badge ${escapeHtml(statusClass)}">${escapeHtml(statusLabel)}</span>
         </div>
         <div class="btn-group">
-          <button type="button" class="btn btn-primary" id="edit-btn">Edit</button>
+          ${editLocked
+            ? '<button type="button" class="btn btn-primary" disabled title="Records cannot be edited after 5 minutes">Edit</button>'
+            : '<button type="button" class="btn btn-primary" id="edit-btn">Edit</button>'}
           <button type="button" class="btn btn-secondary" id="download-pdf-btn">Download PDF</button>
           <button type="button" class="btn btn-danger" id="delete-btn">Delete</button>
         </div>
       </div>
+      ${editLocked ? '<div class="info-banner">This record was locked for editing 5 minutes after submission.</div>' : ''}
 
       ${warningBanner}
 
@@ -278,9 +285,9 @@ export async function render(el, recordId) {
       ${confirmOverlayHtml}
     </div>`;
 
-  // 6. Attach event listeners
+  // 7. Attach event listeners
 
-  // Edit button
+  // Edit button (only exists when not locked)
   const editBtn = el.querySelector('#edit-btn');
   if (editBtn) {
     editBtn.addEventListener('click', () => {

@@ -4,6 +4,7 @@ import { calculateStatus, STATUS_LABELS, STATUS_CLASSES } from '../services/stat
 import { formatDateUK, daysUntil } from '../utils/date-utils.js';
 import { getDocumentLabels, METHOD_LABELS, STEP2_QUESTIONS } from '../utils/document-labels.js';
 import { navigate } from '../router.js';
+import { isManager } from '../services/auth-service.js';
 
 /**
  * Escapes HTML special characters to prevent XSS.
@@ -216,6 +217,10 @@ export async function render(el, recordId) {
   const createdAt = record.created_at ? new Date(record.created_at) : null;
   const editLocked = createdAt && (Date.now() - createdAt.getTime() > 5 * 60 * 1000);
 
+  // 5b. Check if current user is a manager (for delete button visibility)
+  let userIsManager = false;
+  try { userIsManager = await isManager(); } catch (_) {}
+
   // 6. Render the full view
   el.innerHTML = `
     <div class="record-detail">
@@ -229,7 +234,7 @@ export async function render(el, recordId) {
             ? '<button type="button" class="btn btn-primary" disabled title="Records cannot be edited after 5 minutes">Edit</button>'
             : '<button type="button" class="btn btn-primary" id="edit-btn">Edit</button>'}
           <button type="button" class="btn btn-secondary" id="download-pdf-btn">Download PDF</button>
-          <button type="button" class="btn btn-danger" id="delete-btn">Delete</button>
+          ${userIsManager ? '<button type="button" class="btn btn-danger" id="delete-btn">Delete</button>' : ''}
         </div>
       </div>
       ${editLocked ? '<div class="info-banner">This record was locked for editing 5 minutes after submission.</div>' : ''}
@@ -282,7 +287,7 @@ export async function render(el, recordId) {
         </div>
       </section>
 
-      ${confirmOverlayHtml}
+      ${userIsManager ? confirmOverlayHtml : ''}
     </div>`;
 
   // 7. Attach event listeners

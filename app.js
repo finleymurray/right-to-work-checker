@@ -1,11 +1,37 @@
-import { addRoute, initRouter } from './js/router.js';
+import { addRoute, setAuthGuard, navigate, initRouter } from './js/router.js';
+import { getSession, getUserProfile, isManager, onAuthStateChange, clearProfileCache } from './js/services/auth-service.js';
 
 // Configure pdf.js worker
 if (typeof pdfjsLib !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
-// Register routes
+// ---- Auth guard ----
+setAuthGuard(async (routeOptions) => {
+  const session = await getSession();
+  if (!session) {
+    navigate('/login');
+    return false;
+  }
+  if (routeOptions.requiresManager) {
+    const manager = await isManager();
+    if (!manager) {
+      navigate('/');
+      return false;
+    }
+  }
+  return true;
+});
+
+// ---- Routes ----
+addRoute('/login', async (el) => {
+  // If already logged in, redirect to dashboard
+  const session = await getSession();
+  if (session) { navigate('/'); return; }
+  const { render } = await import('./js/views/login.js');
+  await render(el);
+}, { public: true });
+
 addRoute('/', async (el) => {
   const { render } = await import('./js/views/dashboard.js');
   await render(el);
@@ -26,7 +52,12 @@ addRoute('/record/:id/edit', async (el, params) => {
   await render(el, params.id);
 });
 
-// Handle PDF generation requests from record detail view
+addRoute('/admin', async (el) => {
+  const { render } = await import('./js/views/manager-dashboard.js');
+  await render(el);
+}, { requiresManager: true });
+
+// ---- PDF generation ----
 document.addEventListener('generate-pdf', async (e) => {
   const { recordId } = e.detail;
   const { fetchRecord } = await import('./js/services/records-service.js');
@@ -43,6 +74,64 @@ document.addEventListener('generate-pdf', async (e) => {
 
   generatePDF(record, scanDataUrl);
 });
+
+// ---- Nav auth state ----
+async function updateNavAuth(session) {
+  const userInfoEl = document.getElementById('user-info');
+  const adminLink = document.getElementById('admin-link');
+  const navLinks = document.querySelector('.nav-inner');
+
+  if (!userInfoEl) return;
+
+  if (session) {
+    try {
+      const profile = await getUserProfile();
+      userInfoEl.innerHTML = `
+        <span class="user-name">${escapeHtml(profile?.full_name || session.user.email)}</span>
+        <button type="button" class="btn-sign-out" id="sign-out-btn">Sign out</button>
+      `;
+      userInfoEl.style.display = 'flex';
+
+      // Show/hide admin link
+      if (adminLink) {
+        const manager = profile?.role === 'manager';
+        adminLink.style.display = manager ? '' : 'none';
+      }
+
+      // Attach sign-out handler
+      const signOutBtn = document.getElementById('sign-out-btn');
+      if (signOutBtn) {
+        signOutBtn.addEventListener('click', async () => {
+          const { signOut } = await import('./js/services/auth-service.js');
+          await signOut();
+          navigate('/login');
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load profile for nav:', err);
+    }
+  } else {
+    userInfoEl.innerHTML = '';
+    userInfoEl.style.display = 'none';
+    if (adminLink) adminLink.style.display = 'none';
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// Listen for auth state changes
+onAuthStateChange((event, session) => {
+  clearProfileCache();
+  updateNavAuth(session);
+});
+
+// Initial nav update
+getSession().then(session => updateNavAuth(session));
 
 // Initialise
 initRouter(document.getElementById('app'));

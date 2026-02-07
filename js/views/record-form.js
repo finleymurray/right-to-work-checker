@@ -3,6 +3,7 @@ import { uploadDocumentScan } from '../services/storage-service.js';
 import { calculateStatus } from '../services/status-service.js';
 import { todayISO } from '../utils/date-utils.js';
 import { validateRecord } from '../utils/validation.js';
+import { getUserProfile, getUser } from '../services/auth-service.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -310,6 +311,18 @@ export async function render(el, recordId) {
     });
   }
 
+  // Auto-fill checker_name from logged-in user's profile
+  try {
+    const profile = await getUserProfile();
+    if (profile && profile.full_name) {
+      const checkerInput = el.querySelector('#checker_name');
+      checkerInput.value = profile.full_name;
+      checkerInput.readOnly = true;
+    }
+  } catch (err) {
+    console.error('Could not auto-fill checker name:', err);
+  }
+
   /* ---------------------------------------------------------------- */
   /*  Tab switching                                                   */
   /* ---------------------------------------------------------------- */
@@ -507,7 +520,11 @@ export async function render(el, recordId) {
           });
         }
       } else {
-        // Create new record
+        // Create new record — attach the logged-in user's ID
+        try {
+          const user = await getUser();
+          if (user) data.created_by = user.id;
+        } catch (_) { /* non-fatal */ }
         record = await createRecord(data);
 
         // Upload file if selected, then update record with scan path

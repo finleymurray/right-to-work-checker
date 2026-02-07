@@ -1,7 +1,8 @@
 const routes = [];
 let appEl = null;
+let authGuardFn = null;
 
-export function addRoute(pattern, handler) {
+export function addRoute(pattern, handler, options) {
   // Convert pattern like '/record/:id' to regex
   const paramNames = [];
   const regexStr = pattern.replace(/:([^/]+)/g, (_, name) => {
@@ -12,7 +13,16 @@ export function addRoute(pattern, handler) {
     regex: new RegExp('^' + regexStr + '$'),
     paramNames,
     handler,
+    options: options || {},
   });
+}
+
+/**
+ * Set the auth guard function. Called before every route except those with `public: true`.
+ * Guard receives route options and should return true to allow, false to block.
+ */
+export function setAuthGuard(fn) {
+  authGuardFn = fn;
 }
 
 export function navigate(path) {
@@ -35,6 +45,13 @@ async function handleRoute() {
       route.paramNames.forEach((name, i) => {
         params[name] = match[i + 1];
       });
+
+      // Run auth guard (skip for public routes like /login)
+      if (authGuardFn && !route.options.public) {
+        const allowed = await authGuardFn(route.options);
+        if (!allowed) return;
+      }
+
       try {
         appEl.innerHTML = '<div class="loading">Loading...</div>';
         await route.handler(appEl, params);
@@ -67,6 +84,8 @@ function updateActiveNav(hash) {
     if (href === '#/' && hash === '/') {
       a.classList.add('active');
     } else if (href === '#/new' && hash === '/new') {
+      a.classList.add('active');
+    } else if (href === '#/admin' && hash.startsWith('/admin')) {
       a.classList.add('active');
     } else {
       a.classList.remove('active');

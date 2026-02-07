@@ -45,7 +45,7 @@ body {
   gap: 12px;
 }
 .header-logo {
-  height: 36px;
+  height: 48px;
   width: auto;
   flex-shrink: 0;
 }

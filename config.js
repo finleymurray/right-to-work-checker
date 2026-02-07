@@ -3,4 +3,4 @@
 // See README.md for setup instructions.
 
 export const SUPABASE_URL = 'https://uaclhscpseivkuzajuly.supabase.co';
-export const SUPABASE_ANON_KEY = 'sb_secret_oOcqP21A7QTMbIz-oBGzYA_gXEdP1k6';
+export const SUPABASE_ANON_KEY = 'sb_publishable__Hbu8a8ApDjKP26wt-hEnw_8MAXtiX6';

@@ -3,6 +3,7 @@ import { refreshStatuses, STATUS_LABELS, STATUS_CLASSES } from '../services/stat
 import { formatDateShort } from '../utils/date-utils.js';
 import { METHOD_LABELS } from '../utils/document-labels.js';
 import { exportToZip } from '../utils/excel-export.js';
+import { exportPDFsToZip } from '../utils/pdf-export.js';
 
 const ATTENTION_STATUSES = ['follow_up_due', 'expired', 'follow_up_overdue'];
 const DANGER_STATUSES = ['expired', 'follow_up_overdue'];
@@ -263,6 +264,7 @@ function buildDashboardHTML(records) {
       <p class="export-desc">Download a ZIP containing an Excel spreadsheet and all document scans.</p>
       <div class="export-row">
         <button type="button" class="btn btn-secondary" id="export-all-btn">Export all records</button>
+        <button type="button" class="btn btn-secondary" id="export-all-pdfs-btn">Export all PDFs</button>
         <span class="export-progress" id="export-progress"></span>
       </div>
       <div class="export-row">
@@ -338,7 +340,7 @@ function attachEventListeners(el) {
   const progressEl = el.querySelector('#export-progress');
 
   function setExportBtns(disabled) {
-    const btns = el.querySelectorAll('#export-all-btn, #export-range-btn');
+    const btns = el.querySelectorAll('#export-all-btn, #export-range-btn, #export-all-pdfs-btn');
     btns.forEach(b => b.disabled = disabled);
   }
 
@@ -367,6 +369,28 @@ function attachEventListeners(el) {
       if (allRecords.length === 0) return;
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       runExport(allRecords, `RTW_Records_All_${dateStr}`);
+    });
+  }
+
+  const exportAllPdfsBtn = el.querySelector('#export-all-pdfs-btn');
+  if (exportAllPdfsBtn) {
+    exportAllPdfsBtn.addEventListener('click', async () => {
+      if (allRecords.length === 0) return;
+      setExportBtns(true);
+      if (progressEl) progressEl.textContent = 'Generating PDFs\u2026';
+      try {
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        function showPdfProgress(current, total) {
+          if (progressEl) {
+            progressEl.textContent = `Generating PDF ${current}/${total}\u2026`;
+          }
+        }
+        await exportPDFsToZip(allRecords, `RTW_PDFs_All_${dateStr}`, showPdfProgress);
+      } catch (err) {
+        alert('PDF export failed: ' + err.message);
+      }
+      if (progressEl) progressEl.textContent = '';
+      setExportBtns(false);
     });
   }
 

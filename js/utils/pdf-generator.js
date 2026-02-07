@@ -3,14 +3,14 @@ import { getDocumentLabels, METHOD_LABELS, STEP2_QUESTIONS } from './document-la
 import { LOGO_WHITE_B64, LOGO_DARK_B64 } from './logo-data.js';
 
 /**
- * Generate and download a compliance PDF for a given RTW record.
+ * Build the jsPDF document for a given RTW record.
  * @param {Object} record - The record object from Supabase
  * @param {string|null} scanDataUrl - Base64 data URL of the document scan, or null
+ * @returns {Object|null} jsPDF document instance, or null if library not loaded
  */
-export function generatePDF(record, scanDataUrl) {
+function buildPDFDoc(record, scanDataUrl) {
   if (typeof window.jspdf === 'undefined') {
-    alert('PDF library failed to load. Please check your internet connection and refresh the page.');
-    return;
+    return null;
   }
 
   const { jsPDF } = window.jspdf;
@@ -320,10 +320,35 @@ export function generatePDF(record, scanDataUrl) {
 
   addFooter();
 
-  // ---- Save ----
+  return doc;
+}
+
+/**
+ * Generate and download a compliance PDF for a given RTW record.
+ * @param {Object} record - The record object from Supabase
+ * @param {string|null} scanDataUrl - Base64 data URL of the document scan, or null
+ */
+export function generatePDF(record, scanDataUrl) {
+  const doc = buildPDFDoc(record, scanDataUrl);
+  if (!doc) {
+    alert('PDF library failed to load. Please check your internet connection and refresh the page.');
+    return;
+  }
   const safeName = (record.person_name || 'record').replace(/[^a-zA-Z0-9]/g, '_');
   const dateStr = (record.check_date || '').replace(/-/g, '');
   doc.save('RTW_Record_' + safeName + '_' + dateStr + '.pdf');
+}
+
+/**
+ * Generate a compliance PDF and return it as a Blob (for bulk export).
+ * @param {Object} record - The record object from Supabase
+ * @param {string|null} scanDataUrl - Base64 data URL of the document scan, or null
+ * @returns {Blob|null} PDF blob, or null if library not loaded
+ */
+export function generatePDFBlob(record, scanDataUrl) {
+  const doc = buildPDFDoc(record, scanDataUrl);
+  if (!doc) return null;
+  return doc.output('blob');
 }
 
 /**

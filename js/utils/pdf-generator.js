@@ -41,7 +41,7 @@ export function generatePDF(record, scanDataUrl) {
       'This record must be retained for the duration of employment plus 2 years and then securely destroyed.',
       pw / 2, ph - 10, { align: 'center' }
     );
-    doc.text('Generated: ' + new Date().toLocaleString('en-GB'), pw / 2, ph - 6, { align: 'center' });
+    doc.text('ImmersiveCore RTW Checker | Generated: ' + new Date().toLocaleString('en-GB'), pw / 2, ph - 6, { align: 'center' });
   }
 
   function checkPageBreak(needed) {
@@ -65,19 +65,58 @@ export function generatePDF(record, scanDataUrl) {
     doc.text(val || '\u2014', valX, yOff);
   }
 
+  // -------- Logo helper --------
+  function drawLogo(x, yPos, onDark) {
+    const boxW = 48;
+    const boxH = 10;
+
+    // "IMMERSIVE" text
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    if (onDark) {
+      doc.setTextColor(255, 255, 255);
+    } else {
+      doc.setTextColor(...dark);
+    }
+    doc.text('IMMERSIVE', x, yPos);
+
+    // Box behind "CORE"
+    const coreY = yPos + 1.5;
+    if (onDark) {
+      doc.setFillColor(255, 255, 255);
+    } else {
+      doc.setFillColor(...dark);
+    }
+    doc.rect(x, coreY, boxW, boxH, 'F');
+
+    // "CORE" text inside box
+    doc.setFontSize(9);
+    if (onDark) {
+      doc.setTextColor(...blue);
+    } else {
+      doc.setTextColor(255, 255, 255);
+    }
+    doc.text('C  O  R  E', x + boxW / 2, coreY + boxH * 0.72, { align: 'center' });
+  }
+
   // ======== PAGE 1 ========
 
   // Blue header bar
   doc.setFillColor(...blue);
-  doc.rect(0, 0, pw, 22, 'F');
-  doc.setFontSize(18);
+  doc.rect(0, 0, pw, 26, 'F');
+
+  // Logo in header (white on blue)
+  drawLogo(ml, 8, true);
+
+  // Title text
+  doc.setFontSize(14);
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.text('Right to Work Checklist', ml, 14);
+  doc.text('Right to Work Checklist', ml + 55, 10);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.text('UK Employer Compliance Record', pw - mr, 14, { align: 'right' });
-  y = 30;
+  doc.text('UK Employer Compliance Record', ml + 55, 17);
+  y = 34;
 
   // ---- Details box ----
   let rowCount = 5;
@@ -252,12 +291,15 @@ export function generatePDF(record, scanDataUrl) {
   y = 18;
 
   doc.setFillColor(...blue);
-  doc.rect(0, 0, pw, 16, 'F');
-  doc.setFontSize(13);
+  doc.rect(0, 0, pw, 20, 'F');
+
+  drawLogo(ml, 6, true);
+
+  doc.setFontSize(12);
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.text('Right to Work Document Scan', ml, 11);
-  y = 24;
+  doc.text('Document Scan', ml + 55, 10);
+  y = 28;
 
   doc.setFontSize(9);
   doc.setTextColor(...dark);

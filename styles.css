@@ -40,9 +40,17 @@ body {
 .header-link {
   text-decoration: none;
   color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header-logo {
+  height: 36px;
+  width: auto;
+  flex-shrink: 0;
 }
 .header-link h1 {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   color: #fff;
 }

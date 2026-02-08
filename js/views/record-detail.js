@@ -32,6 +32,26 @@ function fieldHtml(label, value) {
  * Builds the warning banner markup based on current status.
  */
 function buildWarningBanner(record, status) {
+  if (status === 'pending_deletion') {
+    const dateStr = record.deletion_due_date ? formatDateUK(record.deletion_due_date) : '';
+    return `
+      <div class="warning-banner red">
+        This record is due for GDPR deletion (retention period expired${dateStr ? ' on ' + escapeHtml(dateStr) : ''}). A manager should delete this record.
+      </div>`;
+  }
+
+  if (record.employment_end_date && !record.deletion_due_date) {
+    return '';
+  }
+
+  if (record.deletion_due_date && status !== 'pending_deletion') {
+    const dateStr = formatDateUK(record.deletion_due_date);
+    return `
+      <div class="warning-banner amber">
+        Employment ended. This record will be due for deletion on ${escapeHtml(dateStr)}.
+      </div>`;
+  }
+
   if (status === 'follow_up_due' && record.follow_up_date) {
     const days = daysUntil(record.follow_up_date);
     const dateStr = formatDateUK(record.follow_up_date);
@@ -197,6 +217,14 @@ export async function render(el, recordId) {
     ? fieldHtml('IDSP provider', record.idsp_provider)
     : '';
 
+  const employmentEndField = record.employment_end_date
+    ? fieldHtml('Employment end date', formatDateUK(record.employment_end_date))
+    : '';
+
+  const deletionDueField = record.deletion_due_date
+    ? fieldHtml('Record deletion due', formatDateUK(record.deletion_due_date))
+    : '';
+
   // Notes section
   const notesSection = record.additional_notes
     ? `
@@ -252,6 +280,8 @@ export async function render(el, recordId) {
         ${shareCodeField}
         ${idspField}
         ${fieldHtml('Checker name', record.checker_name)}
+        ${employmentEndField}
+        ${deletionDueField}
       </div>
 
       <section class="detail-section">

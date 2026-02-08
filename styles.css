@@ -474,6 +474,7 @@ main.container {
 .badge-follow-up-due { background: #fef7e5; color: #6d4900; }
 .badge-expired { background: #fde7e4; color: #d4351c; }
 .badge-overdue { background: #f4cdc6; color: #942514; }
+.badge-pending-deletion { background: #f4cdc6; color: #942514; }
 
 /* ---- Dashboard ---- */
 .dashboard-header {
@@ -960,6 +961,24 @@ input[readonly] {
   color: var(--ho-blue);
   text-decoration: underline;
   font-family: inherit;
+}
+
+/* ---- Retention page ---- */
+.retention-info {
+  background: #e8f0fe;
+  border-left: 4px solid var(--ho-blue);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: var(--ho-dark);
+}
+.retention-info p {
+  margin: 0;
+}
+.empty-state-text {
+  color: var(--ho-grey);
+  font-size: 14px;
+  padding: 16px 0;
 }
 
 /* ---- Responsive ---- */

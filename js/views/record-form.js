@@ -182,6 +182,15 @@ export async function render(el, recordId) {
               value="${existing ? (existing.follow_up_date || '') : ''}">
           </div>
         </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="employment_end_date">Employment end date <span style="font-weight:400;color:#505a5f;">(optional)</span></label>
+            <span class="hint">If the employee has left, enter their last day. The record will be flagged for deletion 2 years after this date.</span>
+            <input type="date" id="employment_end_date" name="employment_end_date"
+              value="${existing ? (existing.employment_end_date || '') : ''}">
+          </div>
+        </div>
       </div>
 
       <!-- ========== Section 2: Step 1 - Obtain ========== -->
@@ -467,6 +476,14 @@ export async function render(el, recordId) {
     });
 
     // Build the record data object
+    const employmentEndDate = el.querySelector('#employment_end_date').value || null;
+    let deletionDueDate = null;
+    if (employmentEndDate) {
+      const endDate = new Date(employmentEndDate + 'T00:00:00');
+      endDate.setFullYear(endDate.getFullYear() + 2);
+      deletionDueDate = endDate.toISOString().slice(0, 10);
+    }
+
     const data = {
       person_name: el.querySelector('#person_name').value.trim(),
       date_of_birth: el.querySelector('#date_of_birth').value || null,
@@ -475,6 +492,8 @@ export async function render(el, recordId) {
       check_method: checkMethod,
       expiry_date: el.querySelector('#expiry_date').value || null,
       follow_up_date: el.querySelector('#follow_up_date').value || null,
+      employment_end_date: employmentEndDate,
+      deletion_due_date: deletionDueDate,
       documents_checked: documentsChecked,
       share_code: checkMethod === 'online' ? (el.querySelector('#share_code').value.trim() || null) : null,
       idsp_provider: checkMethod === 'idsp' ? (el.querySelector('#idsp_provider').value.trim() || null) : null,

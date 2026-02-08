@@ -1,5 +1,5 @@
 import { getSupabase } from '../supabase-client.js';
-import { SUPABASE_URL } from '../../config.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../config.js';
 
 /**
  * Create a new user via the create-user Edge Function.
@@ -16,6 +16,7 @@ export async function createUser({ email, full_name, role, password }) {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${session.access_token}`,
+      'apikey': SUPABASE_ANON_KEY,
     },
     body: JSON.stringify({ email, full_name, role, password }),
   });

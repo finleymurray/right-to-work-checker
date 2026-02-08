@@ -97,6 +97,8 @@ function buildPDFDoc(record, scanDataUrl) {
   let rowCount = 5;
   if (record.expiry_date) rowCount++;
   if (record.follow_up_date) rowCount++;
+  if (record.employment_end_date) rowCount++;
+  if (record.deletion_due_date) rowCount++;
   const boxH = 10 + (rowCount * lineH);
 
   doc.setFillColor(...lightBg);
@@ -125,6 +127,14 @@ function buildPDFDoc(record, scanDataUrl) {
   if (record.follow_up_date) {
     by += lineH;
     labelVal('Follow-up due:', formatDateUK(record.follow_up_date), by);
+  }
+  if (record.employment_end_date) {
+    by += lineH;
+    labelVal('Employment end:', formatDateUK(record.employment_end_date), by);
+  }
+  if (record.deletion_due_date) {
+    by += lineH;
+    labelVal('Deletion due:', formatDateUK(record.deletion_due_date), by);
   }
 
   y += boxH + 6;

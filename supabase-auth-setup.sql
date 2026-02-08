@@ -149,5 +149,69 @@ CREATE POLICY "auth_insert_audit"
   ON audit_log FOR INSERT TO authenticated WITH CHECK (true);
 
 -- 10. Storage policies for document-scans bucket
--- (Run these only if you haven't already set up storage policies)
--- Note: These use the storage schema. Adjust if your bucket policies are already configured.
+
+-- Create the bucket if it doesn't exist
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('document-scans', 'document-scans', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow authenticated users to upload scans
+DROP POLICY IF EXISTS "auth_upload_scans" ON storage.objects;
+CREATE POLICY "auth_upload_scans"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'document-scans');
+
+-- Allow authenticated users to read scans
+DROP POLICY IF EXISTS "auth_read_scans" ON storage.objects;
+CREATE POLICY "auth_read_scans"
+  ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'document-scans');
+
+-- Allow authenticated users to update (overwrite) scans
+DROP POLICY IF EXISTS "auth_update_scans" ON storage.objects;
+CREATE POLICY "auth_update_scans"
+  ON storage.objects FOR UPDATE TO authenticated
+  USING (bucket_id = 'document-scans');
+
+-- Allow authenticated users to delete scans
+DROP POLICY IF EXISTS "auth_delete_scans" ON storage.objects;
+CREATE POLICY "auth_delete_scans"
+  ON storage.objects FOR DELETE TO authenticated
+  USING (bucket_id = 'document-scans');
+
+-- ============================================================
+-- 11. GDPR Retention — employment end date + deleted records log
+-- ============================================================
+
+-- Add employment_end_date and deletion_due_date to rtw_records
+ALTER TABLE rtw_records ADD COLUMN IF NOT EXISTS employment_end_date DATE;
+ALTER TABLE rtw_records ADD COLUMN IF NOT EXISTS deletion_due_date DATE;
+
+-- Table to log deleted records (GDPR-compliant: no personal data kept)
+CREATE TABLE IF NOT EXISTS deleted_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  original_record_id UUID NOT NULL,
+  person_name TEXT NOT NULL,
+  employment_start_date DATE,
+  employment_end_date DATE,
+  deletion_due_date DATE,
+  deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_by UUID REFERENCES auth.users(id),
+  deleted_by_email TEXT,
+  reason TEXT NOT NULL DEFAULT 'GDPR retention period expired'
+);
+
+CREATE INDEX IF NOT EXISTS idx_deleted_records_deleted_at ON deleted_records(deleted_at DESC);
+
+-- RLS for deleted_records
+ALTER TABLE deleted_records ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "managers_read_deleted" ON deleted_records;
+CREATE POLICY "managers_read_deleted"
+  ON deleted_records FOR SELECT TO authenticated
+  USING (public.is_manager());
+
+DROP POLICY IF EXISTS "managers_insert_deleted" ON deleted_records;
+CREATE POLICY "managers_insert_deleted"
+  ON deleted_records FOR INSERT TO authenticated
+  WITH CHECK (public.is_manager());

@@ -57,6 +57,11 @@ addRoute('/admin', async (el) => {
   await render(el);
 }, { requiresManager: true });
 
+addRoute('/retention', async (el) => {
+  const { render } = await import('./js/views/retention.js');
+  await render(el);
+}, { requiresManager: true });
+
 // ---- PDF generation ----
 document.addEventListener('generate-pdf', async (e) => {
   const { recordId } = e.detail;
@@ -79,7 +84,7 @@ document.addEventListener('generate-pdf', async (e) => {
 async function updateNavAuth(session) {
   const userInfoEl = document.getElementById('user-info');
   const adminLink = document.getElementById('admin-link');
-  const navLinks = document.querySelector('.nav-inner');
+  const retentionLink = document.getElementById('retention-link');
 
   if (!userInfoEl) return;
 
@@ -92,10 +97,13 @@ async function updateNavAuth(session) {
       `;
       userInfoEl.style.display = 'flex';
 
-      // Show/hide admin link
+      // Show/hide admin and retention links for managers
+      const managerRole = profile?.role === 'manager';
       if (adminLink) {
-        const manager = profile?.role === 'manager';
-        adminLink.style.display = manager ? '' : 'none';
+        adminLink.style.display = managerRole ? '' : 'none';
+      }
+      if (retentionLink) {
+        retentionLink.style.display = managerRole ? '' : 'none';
       }
 
       // Attach sign-out handler
@@ -114,6 +122,7 @@ async function updateNavAuth(session) {
     userInfoEl.innerHTML = '';
     userInfoEl.style.display = 'none';
     if (adminLink) adminLink.style.display = 'none';
+    if (retentionLink) retentionLink.style.display = 'none';
   }
 }
 

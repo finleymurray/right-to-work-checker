@@ -46,6 +46,8 @@ function buildRow(r, scanFilename) {
     'Additional Notes': r.additional_notes || '',
     'Expiry Date': formatDateUK(r.expiry_date),
     'Follow-up Date': formatDateUK(r.follow_up_date),
+    'Employment End Date': formatDateUK(r.employment_end_date),
+    'Deletion Due Date': formatDateUK(r.deletion_due_date),
     'Document Scan': scanFilename || '',
   };
 }

@@ -4,6 +4,14 @@ export function calculateStatus(record) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Check if record is pending deletion (employment ended + deletion due date set)
+  if (record.deletion_due_date) {
+    const deletionDue = new Date(record.deletion_due_date + 'T00:00:00');
+    if (deletionDue <= today) {
+      return 'pending_deletion';
+    }
+  }
+
   // Check if expiry date has passed
   if (record.expiry_date) {
     const expiry = new Date(record.expiry_date + 'T00:00:00');
@@ -59,6 +67,7 @@ export const STATUS_LABELS = {
   follow_up_due: 'Follow-up due',
   expired: 'Expired',
   follow_up_overdue: 'Overdue',
+  pending_deletion: 'Pending deletion',
 };
 
 export const STATUS_CLASSES = {
@@ -66,4 +75,5 @@ export const STATUS_CLASSES = {
   follow_up_due: 'badge-follow-up-due',
   expired: 'badge-expired',
   follow_up_overdue: 'badge-overdue',
+  pending_deletion: 'badge-pending-deletion',
 };

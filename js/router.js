@@ -87,6 +87,8 @@ function updateActiveNav(hash) {
       a.classList.add('active');
     } else if (href === '#/admin' && hash.startsWith('/admin')) {
       a.classList.add('active');
+    } else if (href === '#/retention' && hash.startsWith('/retention')) {
+      a.classList.add('active');
     } else {
       a.classList.remove('active');
     }

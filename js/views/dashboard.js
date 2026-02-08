@@ -5,8 +5,8 @@ import { METHOD_LABELS } from '../utils/document-labels.js';
 import { exportToZip } from '../utils/excel-export.js';
 import { exportPDFsToZip } from '../utils/pdf-export.js';
 
-const ATTENTION_STATUSES = ['follow_up_due', 'expired', 'follow_up_overdue'];
-const DANGER_STATUSES = ['expired', 'follow_up_overdue'];
+const ATTENTION_STATUSES = ['follow_up_due', 'expired', 'follow_up_overdue', 'pending_deletion'];
+const DANGER_STATUSES = ['expired', 'follow_up_overdue', 'pending_deletion'];
 
 const STATUS_FILTER_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -14,6 +14,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'follow_up_due', label: 'Follow-up due' },
   { value: 'expired', label: 'Expired' },
   { value: 'follow_up_overdue', label: 'Overdue' },
+  { value: 'pending_deletion', label: 'Pending deletion' },
 ];
 
 const TYPE_FILTER_OPTIONS = [

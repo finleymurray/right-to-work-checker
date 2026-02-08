@@ -1,7 +1,4 @@
-import { fetchDeletedRecords, fetchRecordsPendingDeletion, logRecordDeletion } from '../services/retention-service.js';
-import { deleteRecord } from '../services/records-service.js';
-import { deleteRecordScans } from '../services/storage-service.js';
-import { getUser, getUserProfile } from '../services/auth-service.js';
+import { fetchDeletedRecords, autoDeleteExpiredRecords } from '../services/retention-service.js';
 import { formatDateUK } from '../utils/date-utils.js';
 
 function escapeHtml(str) {
@@ -11,35 +8,27 @@ function escapeHtml(str) {
   return el.innerHTML;
 }
 
-function buildPendingTable(records) {
-  if (records.length === 0) {
-    return '<p class="empty-state-text">No records are currently pending deletion.</p>';
+function buildAutoDeleteBanner(results) {
+  if (results.deleted.length === 0 && results.errors.length === 0) {
+    return '<div class="info-banner">No expired records found. All records are within their retention period.</div>';
   }
 
-  const rows = records.map(r => `
-    <tr>
-      <td>${escapeHtml(r.person_name)}</td>
-      <td>${r.check_date ? formatDateUK(r.check_date) : ''}</td>
-      <td>${r.employment_end_date ? formatDateUK(r.employment_end_date) : ''}</td>
-      <td>${r.deletion_due_date ? formatDateUK(r.deletion_due_date) : ''}</td>
-      <td>
-        <button type="button" class="btn btn-danger btn-small delete-pending-btn" data-id="${r.id}">Delete now</button>
-      </td>
-    </tr>`).join('');
-
-  return `
-    <table class="records-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Check Date</th>
-          <th>Employment End</th>
-          <th>Deletion Due</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+  let html = '';
+  if (results.deleted.length > 0) {
+    html += `
+      <div class="warning-banner amber">
+        <strong>${results.deleted.length} expired record${results.deleted.length === 1 ? '' : 's'} automatically deleted:</strong>
+        ${results.deleted.map(n => escapeHtml(n)).join(', ')}
+      </div>`;
+  }
+  if (results.errors.length > 0) {
+    html += `
+      <div class="warning-banner red">
+        <strong>${results.errors.length} record${results.errors.length === 1 ? '' : 's'} failed to delete:</strong><br>
+        ${results.errors.map(e => escapeHtml(e)).join('<br>')}
+      </div>`;
+  }
+  return html;
 }
 
 function buildDeletedTable(records) {
@@ -74,16 +63,20 @@ function buildDeletedTable(records) {
 }
 
 export async function render(el) {
-  el.innerHTML = '<div class="loading">Loading retention data\u2026</div>';
+  el.innerHTML = '<div class="loading">Processing expired records\u2026</div>';
 
-  let pendingRecords = [];
-  let deletedRecords = [];
-
+  // Auto-delete any records past their retention period
+  let autoDeleteResults = { deleted: [], errors: [] };
   try {
-    [pendingRecords, deletedRecords] = await Promise.all([
-      fetchRecordsPendingDeletion(),
-      fetchDeletedRecords(),
-    ]);
+    autoDeleteResults = await autoDeleteExpiredRecords();
+  } catch (err) {
+    autoDeleteResults.errors.push(err.message);
+  }
+
+  // Fetch the deletion audit log
+  let deletedRecords = [];
+  try {
+    deletedRecords = await fetchDeletedRecords();
   } catch (err) {
     el.innerHTML = `
       <div class="error-banner">
@@ -100,15 +93,10 @@ export async function render(el) {
     </div>
 
     <div class="retention-info">
-      <p>Under GDPR and Home Office guidance, right to work records must be retained for the duration of employment plus 2 years, then securely destroyed. Records past their retention period appear below for deletion.</p>
+      <p>Under GDPR and Home Office guidance, right to work records must be retained for the duration of employment plus 2 years, then securely destroyed. Expired records are automatically deleted when this page loads.</p>
     </div>
 
-    <section class="detail-section">
-      <h3 class="detail-section-title">Records Pending Deletion (${pendingRecords.length})</h3>
-      <div class="detail-section-body">
-        ${buildPendingTable(pendingRecords)}
-      </div>
-    </section>
+    ${buildAutoDeleteBanner(autoDeleteResults)}
 
     <section class="detail-section">
       <h3 class="detail-section-title">Deleted Records Log (${deletedRecords.length})</h3>
@@ -118,36 +106,6 @@ export async function render(el) {
       </div>
     </section>
   `;
-
-  // Handle individual delete buttons
-  el.querySelectorAll('.delete-pending-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const recordId = btn.getAttribute('data-id');
-      const record = pendingRecords.find(r => r.id === recordId);
-      if (!record) return;
-
-      if (!confirm(`Delete the record for ${record.person_name}? This will permanently remove all personal data and document scans. This cannot be undone.`)) {
-        return;
-      }
-
-      btn.disabled = true;
-      btn.textContent = 'Deleting\u2026';
-
-      try {
-        const user = await getUser();
-        const profile = await getUserProfile();
-        await logRecordDeletion(record, user.id, profile?.email || user.email);
-        await deleteRecordScans(recordId);
-        await deleteRecord(recordId);
-        // Re-render
-        await render(el);
-      } catch (err) {
-        alert('Failed to delete: ' + err.message);
-        btn.disabled = false;
-        btn.textContent = 'Delete now';
-      }
-    });
-  });
 
   // Export deleted records to Excel
   const exportBtn = el.querySelector('#export-deleted-btn');

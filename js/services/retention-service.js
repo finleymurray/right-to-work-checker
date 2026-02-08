@@ -1,4 +1,7 @@
 import { getSupabase } from '../supabase-client.js';
+import { deleteRecord } from './records-service.js';
+import { deleteRecordScans } from './storage-service.js';
+import { getUser, getUserProfile } from './auth-service.js';
 
 /**
  * Fetch all deleted records (managers only — RLS enforced).
@@ -47,4 +50,47 @@ export async function fetchRecordsPendingDeletion() {
     .order('deletion_due_date', { ascending: true });
   if (error) throw new Error('Failed to fetch records pending deletion: ' + error.message);
   return data || [];
+}
+
+/**
+ * Auto-delete all records past their retention period.
+ * Logs each deletion, removes scans, then deletes the record.
+ * Returns { deleted: [...names], errors: [...messages] }.
+ */
+export async function autoDeleteExpiredRecords() {
+  const results = { deleted: [], errors: [] };
+
+  let records;
+  try {
+    records = await fetchRecordsPendingDeletion();
+  } catch (err) {
+    results.errors.push(err.message);
+    return results;
+  }
+
+  if (records.length === 0) return results;
+
+  let userId, userEmail;
+  try {
+    const user = await getUser();
+    const profile = await getUserProfile();
+    userId = user.id;
+    userEmail = profile?.email || user.email;
+  } catch (err) {
+    results.errors.push('Could not identify current user: ' + err.message);
+    return results;
+  }
+
+  for (const record of records) {
+    try {
+      await logRecordDeletion(record, userId, userEmail);
+      await deleteRecordScans(record.id);
+      await deleteRecord(record.id);
+      results.deleted.push(record.person_name);
+    } catch (err) {
+      results.errors.push(`${record.person_name}: ${err.message}`);
+    }
+  }
+
+  return results;
 }

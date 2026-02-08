@@ -105,6 +105,13 @@ RETURNS BOOLEAN AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- 8. RLS Policies — rtw_records
+-- Remove any legacy wide-open policies first
+DROP POLICY IF EXISTS "Allow all access" ON rtw_records;
+DROP POLICY IF EXISTS "strict_view_policy" ON rtw_records;
+DROP POLICY IF EXISTS "strict_update_policy" ON rtw_records;
+DROP POLICY IF EXISTS "strict_insert_policy" ON rtw_records;
+DROP POLICY IF EXISTS "strict_delete_policy" ON rtw_records;
+
 -- Staff see only their own records; managers see all.
 DROP POLICY IF EXISTS "auth_select_records" ON rtw_records;
 CREATE POLICY "auth_select_records"

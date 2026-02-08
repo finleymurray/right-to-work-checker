@@ -2,6 +2,7 @@ import { formatDateUK } from './date-utils.js';
 import { getDocumentLabels, METHOD_LABELS } from './document-labels.js';
 import { STATUS_LABELS } from '../services/status-service.js';
 import { getDocumentScanUrl } from '../services/storage-service.js';
+import { logAuditEvent } from '../services/auth-service.js';
 
 const CHECK_TYPE_LABELS = { initial: 'Initial', follow_up: 'Follow-up' };
 
@@ -119,6 +120,12 @@ export async function exportToZip(records, baseFilename, onProgress) {
   XLSX.utils.book_append_sheet(wb, ws, 'RTW Records');
   const xlsxData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   zip.file('RTW_Records.xlsx', xlsxData);
+
+  // Log export event for GDPR audit trail
+  logAuditEvent('export_excel', {
+    table_name: 'rtw_records',
+    new_values: { record_count: records.length, filename: `${baseFilename}.zip` },
+  });
 
   // Generate and download ZIP
   const zipBlob = await zip.generateAsync({ type: 'blob' });

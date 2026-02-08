@@ -78,6 +78,14 @@ document.addEventListener('generate-pdf', async (e) => {
   }
 
   generatePDF(record, scanDataUrl);
+
+  // Log PDF export for GDPR audit trail
+  const { logAuditEvent } = await import('./js/services/auth-service.js');
+  logAuditEvent('export_pdf', {
+    table_name: 'rtw_records',
+    record_id: recordId,
+    new_values: { person_name: record.person_name },
+  });
 });
 
 // ---- Nav auth state ----

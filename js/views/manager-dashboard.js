@@ -1,5 +1,6 @@
-import { fetchAllProfiles, createUser } from '../services/user-management-service.js';
+import { fetchAllProfiles, createUser, updateUserRole, deleteUser } from '../services/user-management-service.js';
 import { fetchAuditLog, fetchLoginHistory } from '../services/audit-service.js';
+import { getUser } from '../services/auth-service.js';
 
 function esc(str) {
   if (!str) return '';
@@ -71,16 +72,28 @@ async function loadStaffTab(el) {
   const panel = el.querySelector('#panel-staff');
 
   try {
-    const profiles = await fetchAllProfiles();
+    const [profiles, currentUser] = await Promise.all([fetchAllProfiles(), getUser()]);
+    const currentUserId = currentUser?.id;
 
-    const rows = profiles.map(p => `
+    const rows = profiles.map(p => {
+      const isSelf = p.id === currentUserId;
+      const toggleRole = p.role === 'manager' ? 'staff' : 'manager';
+      const toggleLabel = p.role === 'manager' ? 'Demote to staff' : 'Promote to manager';
+
+      return `
       <tr>
-        <td>${esc(p.full_name)}</td>
+        <td>${esc(p.full_name)}${isSelf ? ' <span style="color:#505a5f;font-size:12px;">(you)</span>' : ''}</td>
         <td>${esc(p.email)}</td>
         <td><span class="badge ${p.role === 'manager' ? 'badge-valid' : ''}">${esc(p.role)}</span></td>
         <td>${formatDateTime(p.created_at)}</td>
-      </tr>
-    `).join('');
+        <td>
+          ${isSelf ? '' : `
+            <button type="button" class="btn btn-secondary btn-small role-toggle-btn" data-user-id="${esc(p.id)}" data-new-role="${esc(toggleRole)}">${esc(toggleLabel)}</button>
+            <button type="button" class="btn btn-danger btn-small delete-user-btn" data-user-id="${esc(p.id)}" data-user-name="${esc(p.full_name)}"style="margin-left:4px;">Delete</button>
+          `}
+        </td>
+      </tr>`;
+    }).join('');
 
     panel.innerHTML = `
       <div class="admin-section">
@@ -115,16 +128,28 @@ async function loadStaffTab(el) {
         </form>
       </div>
 
+      <div id="staff-action-msg" style="display:none;margin-bottom:12px;"></div>
+
       <div class="admin-section">
         <h3>All Staff (${profiles.length})</h3>
         ${profiles.length === 0 ? '<p>No users found.</p>' : `
           <table class="records-table">
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th></tr>
+              <tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
         `}
+      </div>
+
+      <div class="confirm-overlay" id="delete-user-overlay" style="display:none;">
+        <div class="confirm-dialog">
+          <p>Are you sure you want to delete <strong id="delete-user-name"></strong>? This cannot be undone.</p>
+          <div class="btn-group">
+            <button type="button" class="btn btn-danger" id="confirm-delete-user-btn">Delete</button>
+            <button type="button" class="btn btn-secondary" id="cancel-delete-user-btn">Cancel</button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -163,6 +188,83 @@ async function loadStaffTab(el) {
         btn.textContent = 'Create user';
       }
     });
+
+    // Role toggle handlers
+    panel.querySelectorAll('.role-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.dataset.userId;
+        const newRole = btn.dataset.newRole;
+        btn.disabled = true;
+        btn.textContent = 'Updating\u2026';
+
+        try {
+          await updateUserRole(userId, newRole);
+          await loadStaffTab(el);
+        } catch (err) {
+          const msgEl = panel.querySelector('#staff-action-msg');
+          msgEl.className = 'warning-banner red';
+          msgEl.textContent = err.message || 'Failed to update role.';
+          msgEl.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = newRole === 'manager' ? 'Promote to manager' : 'Demote to staff';
+        }
+      });
+    });
+
+    // Delete user handlers
+    const overlay = panel.querySelector('#delete-user-overlay');
+    const confirmBtn = panel.querySelector('#confirm-delete-user-btn');
+    const cancelBtn = panel.querySelector('#cancel-delete-user-btn');
+    const deleteNameEl = panel.querySelector('#delete-user-name');
+    let pendingDeleteUserId = null;
+
+    panel.querySelectorAll('.delete-user-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pendingDeleteUserId = btn.dataset.userId;
+        deleteNameEl.textContent = btn.dataset.userName;
+        overlay.style.display = 'flex';
+      });
+    });
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        overlay.style.display = 'none';
+        pendingDeleteUserId = null;
+      });
+    }
+
+    if (overlay) {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          overlay.style.display = 'none';
+          pendingDeleteUserId = null;
+        }
+      });
+    }
+
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', async () => {
+        if (!pendingDeleteUserId) return;
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Deleting\u2026';
+
+        try {
+          await deleteUser(pendingDeleteUserId);
+          overlay.style.display = 'none';
+          pendingDeleteUserId = null;
+          await loadStaffTab(el);
+        } catch (err) {
+          overlay.style.display = 'none';
+          const msgEl = panel.querySelector('#staff-action-msg');
+          msgEl.className = 'warning-banner red';
+          msgEl.textContent = err.message || 'Failed to delete user.';
+          msgEl.style.display = 'block';
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Delete';
+          pendingDeleteUserId = null;
+        }
+      });
+    }
   } catch (err) {
     panel.innerHTML = `<div class="warning-banner red">Failed to load staff: ${esc(err.message)}</div>`;
   }

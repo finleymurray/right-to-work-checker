@@ -118,10 +118,11 @@ CREATE POLICY "auth_select_records"
   ON rtw_records FOR SELECT TO authenticated
   USING (created_by = auth.uid() OR public.is_manager());
 
--- Anyone authenticated can insert (created_by is set in app code).
+-- Anyone authenticated can insert, but created_by must match their own uid.
 DROP POLICY IF EXISTS "auth_insert_records" ON rtw_records;
 CREATE POLICY "auth_insert_records"
-  ON rtw_records FOR INSERT TO authenticated WITH CHECK (true);
+  ON rtw_records FOR INSERT TO authenticated
+  WITH CHECK (created_by = auth.uid());
 
 -- Staff can only update their own records; managers can update all.
 DROP POLICY IF EXISTS "auth_update_records" ON rtw_records;
@@ -251,3 +252,28 @@ DROP POLICY IF EXISTS "managers_insert_deleted" ON deleted_records;
 CREATE POLICY "managers_insert_deleted"
   ON deleted_records FOR INSERT TO authenticated
   WITH CHECK (public.is_manager());
+
+-- ============================================================
+-- 12. GDPR — Scrub personal data from audit_log when records are deleted
+-- ============================================================
+
+-- When a record is deleted for GDPR, the audit_log still holds full JSONB copies
+-- of the record in old_values/new_values. This function redacts sensitive fields
+-- (person_name, date_of_birth, share_code, verification_answers, additional_notes)
+-- from audit_log entries for a given record_id, preserving the audit trail structure
+-- but removing personal data.
+CREATE OR REPLACE FUNCTION public.scrub_audit_personal_data(target_record_id UUID)
+RETURNS VOID AS $$
+DECLARE
+  sensitive_keys TEXT[] := ARRAY['person_name', 'date_of_birth', 'share_code', 'verification_answers', 'additional_notes', 'document_scan_path', 'document_scan_filename'];
+  k TEXT;
+BEGIN
+  FOREACH k IN ARRAY sensitive_keys LOOP
+    UPDATE audit_log
+    SET old_values = old_values - k,
+        new_values = new_values - k
+    WHERE record_id = target_record_id
+      AND (old_values ? k OR new_values ? k);
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

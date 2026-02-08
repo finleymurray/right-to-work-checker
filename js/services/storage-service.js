@@ -17,7 +17,7 @@ export async function getDocumentScanUrl(scanPath) {
   const { data, error } = await getSupabase()
     .storage
     .from(BUCKET)
-    .createSignedUrl(scanPath, 3600); // 1 hour
+    .createSignedUrl(scanPath, 300); // 5 minutes
   if (error) throw new Error('Failed to get document URL: ' + error.message);
   return data?.signedUrl || null;
 }

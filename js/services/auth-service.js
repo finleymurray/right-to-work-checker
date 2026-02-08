@@ -100,9 +100,11 @@ export function onAuthStateChange(callback) {
 }
 
 /**
- * Insert an audit log entry for auth events (login/logout).
+ * Insert an audit log entry for auth events (login/logout) or other auditable actions.
+ * @param {string} action - The action name (e.g. 'login', 'logout', 'export_excel', 'export_pdf')
+ * @param {Object} [extra] - Optional extra fields (table_name, record_id, new_values)
  */
-export async function logAuditEvent(action) {
+export async function logAuditEvent(action, extra = {}) {
   try {
     const sb = getSupabase();
     const { data: { user } } = await sb.auth.getUser();
@@ -112,6 +114,7 @@ export async function logAuditEvent(action) {
       user_id: user.id,
       user_email: user.email,
       action,
+      ...extra,
     });
   } catch (err) {
     // Don't let audit failures break auth flow

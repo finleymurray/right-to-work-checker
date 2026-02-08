@@ -4,7 +4,8 @@ import { calculateStatus, STATUS_LABELS, STATUS_CLASSES } from '../services/stat
 import { formatDateUK, daysUntil } from '../utils/date-utils.js';
 import { getDocumentLabels, METHOD_LABELS, STEP2_QUESTIONS } from '../utils/document-labels.js';
 import { navigate } from '../router.js';
-import { isManager } from '../services/auth-service.js';
+import { isManager, getUser, getUserProfile } from '../services/auth-service.js';
+import { logRecordDeletion } from '../services/retention-service.js';
 
 /**
  * Escapes HTML special characters to prevent XSS.
@@ -258,14 +259,12 @@ export async function render(el, recordId) {
           <span class="badge ${escapeHtml(statusClass)}">${escapeHtml(statusLabel)}</span>
         </div>
         <div class="btn-group">
-          ${editLocked
-            ? '<button type="button" class="btn btn-primary" disabled title="Records cannot be edited after 5 minutes">Edit</button>'
-            : '<button type="button" class="btn btn-primary" id="edit-btn">Edit</button>'}
+          ${!editLocked ? '<button type="button" class="btn btn-primary" id="edit-btn">Edit</button>' : ''}
           <button type="button" class="btn btn-secondary" id="download-pdf-btn">Download PDF</button>
-          ${userIsManager ? '<button type="button" class="btn btn-danger" id="delete-btn">Delete</button>' : ''}
+          ${userIsManager && !editLocked ? '<button type="button" class="btn btn-danger" id="delete-btn">Delete</button>' : ''}
         </div>
       </div>
-      ${editLocked ? '<div class="info-banner">This record was locked for editing 5 minutes after submission.</div>' : ''}
+      ${editLocked ? '<div class="info-banner">This record was locked 5 minutes after submission. Editing and deletion are no longer available.</div>' : ''}
 
       ${warningBanner}
 
@@ -434,6 +433,10 @@ export async function render(el, recordId) {
       confirmDeleteBtn.textContent = 'Deleting\u2026';
 
       try {
+        // Log deletion to GDPR audit trail before deleting
+        const user = await getUser();
+        const profile = await getUserProfile();
+        await logRecordDeletion(record, user.id, profile?.email || user.email);
         await deleteRecordScans(recordId);
         await deleteRecord(recordId);
         navigate('/');

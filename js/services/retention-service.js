@@ -53,6 +53,19 @@ export async function fetchRecordsPendingDeletion() {
 }
 
 /**
+ * Scrub personal data from audit_log entries for a given record.
+ * Calls the server-side function that removes sensitive fields from JSONB columns.
+ */
+async function scrubAuditData(recordId) {
+  const { error } = await getSupabase().rpc('scrub_audit_personal_data', {
+    target_record_id: recordId,
+  });
+  if (error) {
+    console.error('Failed to scrub audit data for record', recordId, error);
+  }
+}
+
+/**
  * Auto-delete all records past their retention period.
  * Logs each deletion, removes scans, then deletes the record.
  * Returns { deleted: [...names], errors: [...messages] }.
@@ -86,6 +99,8 @@ export async function autoDeleteExpiredRecords() {
       await logRecordDeletion(record, userId, userEmail);
       await deleteRecordScans(record.id);
       await deleteRecord(record.id);
+      // Scrub personal data from audit_log entries for this record (GDPR)
+      await scrubAuditData(record.id);
       results.deleted.push(record.person_name);
     } catch (err) {
       results.errors.push(`${record.person_name}: ${err.message}`);

@@ -528,3 +528,102 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 --   SELECT cron.schedule('rtw-notifications', '0 6 * * *', 'SELECT public.generate_rtw_notifications()');
 -- To check: SELECT * FROM cron.job;
 -- To remove: SELECT cron.unschedule('rtw-notifications');
+
+-- ===========================================================================
+-- Section 14: Onboarding Records Table
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS onboarding_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  full_name TEXT NOT NULL,
+  date_of_birth DATE NOT NULL,
+  ni_number TEXT,
+  address TEXT,
+  personal_email TEXT,
+  mobile_number TEXT,
+  employee_statement TEXT CHECK (employee_statement IN ('A', 'B', 'C')),
+  has_student_loan BOOLEAN DEFAULT false,
+  student_loan_plan TEXT CHECK (student_loan_plan IN ('Plan 1', 'Plan 2', 'Plan 4', 'Plan 5') OR student_loan_plan IS NULL),
+  has_postgraduate_loan BOOLEAN DEFAULT false,
+  bank_account_holder TEXT,
+  bank_sort_code TEXT,
+  bank_account_number TEXT,
+  emergency_contact_name TEXT,
+  emergency_contact_relationship TEXT,
+  emergency_contact_phone TEXT,
+  medical_notes TEXT,
+  tshirt_size TEXT CHECK (tshirt_size IN ('XS', 'S', 'M', 'L', 'XL', 'XXL') OR tshirt_size IS NULL),
+  trouser_size TEXT,
+  paper_scan_path TEXT,
+  paper_scan_filename TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'rtw_in_progress', 'complete')),
+  rtw_record_id UUID,
+  gdrive_folder_id TEXT,
+  gdrive_pdf_link TEXT,
+  created_by UUID NOT NULL REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_onboarding_status ON onboarding_records(status);
+CREATE INDEX IF NOT EXISTS idx_onboarding_created_by ON onboarding_records(created_by);
+
+-- Add onboarding_id to rtw_records for linking
+ALTER TABLE rtw_records ADD COLUMN IF NOT EXISTS onboarding_id UUID REFERENCES onboarding_records(id);
+
+-- RLS for onboarding_records (managers only)
+ALTER TABLE onboarding_records ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "managers_select_onboarding" ON onboarding_records
+  FOR SELECT TO authenticated USING (public.is_manager());
+CREATE POLICY "managers_insert_onboarding" ON onboarding_records
+  FOR INSERT TO authenticated WITH CHECK (public.is_manager());
+CREATE POLICY "managers_update_onboarding" ON onboarding_records
+  FOR UPDATE TO authenticated USING (public.is_manager());
+CREATE POLICY "managers_delete_onboarding" ON onboarding_records
+  FOR DELETE TO authenticated USING (public.is_manager());
+
+-- Storage bucket for onboarding scans
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('onboarding-scans', 'onboarding-scans', false)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "managers_upload_onboarding_scans" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'onboarding-scans' AND public.is_manager());
+CREATE POLICY "managers_read_onboarding_scans" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (bucket_id = 'onboarding-scans' AND public.is_manager());
+CREATE POLICY "managers_update_onboarding_scans" ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (bucket_id = 'onboarding-scans' AND public.is_manager());
+CREATE POLICY "managers_delete_onboarding_scans" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (bucket_id = 'onboarding-scans' AND public.is_manager());
+
+-- Audit trigger for onboarding_records
+CREATE OR REPLACE FUNCTION public.audit_onboarding_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, new_values)
+    VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
+            'create', 'onboarding_records', NEW.id, to_jsonb(NEW));
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, old_values, new_values)
+    VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
+            'update', 'onboarding_records', NEW.id, to_jsonb(OLD), to_jsonb(NEW));
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, old_values)
+    VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
+            'delete', 'onboarding_records', OLD.id, to_jsonb(OLD));
+    RETURN OLD;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER onboarding_records_audit
+  AFTER INSERT OR UPDATE OR DELETE ON onboarding_records
+  FOR EACH ROW EXECUTE FUNCTION public.audit_onboarding_changes();

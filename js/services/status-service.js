@@ -4,6 +4,11 @@ export function calculateStatus(record) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Check if record came from onboarding and hasn't been checked yet
+  if (record.onboarding_id && !record.check_date) {
+    return 'pending_onboarding';
+  }
+
   // Check if record is pending deletion (employment ended + deletion due date set)
   if (record.deletion_due_date) {
     const deletionDue = new Date(record.deletion_due_date + 'T00:00:00');
@@ -68,6 +73,7 @@ export const STATUS_LABELS = {
   expired: 'Expired',
   follow_up_overdue: 'Overdue',
   pending_deletion: 'Pending deletion',
+  pending_onboarding: 'Pending onboarding',
 };
 
 export const STATUS_CLASSES = {
@@ -76,4 +82,5 @@ export const STATUS_CLASSES = {
   expired: 'badge-expired',
   follow_up_overdue: 'badge-overdue',
   pending_deletion: 'badge-pending-deletion',
+  pending_onboarding: 'badge-pending-onboarding',
 };

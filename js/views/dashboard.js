@@ -5,7 +5,7 @@ import { METHOD_LABELS } from '../utils/document-labels.js';
 import { exportToZip } from '../utils/excel-export.js';
 import { exportPDFsToZip } from '../utils/pdf-export.js';
 
-const ATTENTION_STATUSES = ['follow_up_due', 'expired', 'follow_up_overdue', 'pending_deletion'];
+const ATTENTION_STATUSES = ['follow_up_due', 'expired', 'follow_up_overdue', 'pending_deletion', 'pending_onboarding'];
 const DANGER_STATUSES = ['expired', 'follow_up_overdue', 'pending_deletion'];
 
 const STATUS_FILTER_OPTIONS = [
@@ -15,6 +15,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'expired', label: 'Expired' },
   { value: 'follow_up_overdue', label: 'Overdue' },
   { value: 'pending_deletion', label: 'Pending deletion' },
+  { value: 'pending_onboarding', label: 'Pending onboarding' },
 ];
 
 const TYPE_FILTER_OPTIONS = [
@@ -214,8 +215,38 @@ function buildAttentionBanner(records) {
  * @param {Array} records - All records.
  * @returns {string} Complete dashboard HTML.
  */
+function buildPendingOnboardingHTML(records) {
+  const pending = records.filter(r => r.status === 'pending_onboarding');
+  if (pending.length === 0) return '';
+
+  const rows = pending.map(r => {
+    const name = r.person_name || '';
+    const dob = r.date_of_birth ? formatDateShort(r.date_of_birth) : '';
+    const created = r.created_at ? formatDateShort(r.created_at.slice(0, 10)) : '';
+    return `<tr>
+      <td>${name}</td>
+      <td>${dob}</td>
+      <td>${created}</td>
+      <td><a href="#/record/${r.id}/edit" class="btn btn-primary btn-sm">Start RTW Check</a></td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="pending-onboarding-section">
+      <h2>Pending Onboarding <span class="badge badge-pending-onboarding">${pending.length}</span></h2>
+      <p class="pending-onboarding-desc">These employees have been onboarded and are awaiting their Right to Work check.</p>
+      <table class="records-table pending-table">
+        <thead>
+          <tr><th>Name</th><th>DOB</th><th>Onboarded</th><th>Action</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function buildDashboardHTML(records) {
   const attentionBanner = buildAttentionBanner(records);
+  const pendingOnboarding = buildPendingOnboardingHTML(records);
 
   const filtered = applyFilters([...records]);
   const sorted = applySort(filtered);
@@ -228,6 +259,7 @@ function buildDashboardHTML(records) {
     </div>
 
     ${attentionBanner}
+    ${pendingOnboarding}
 
     <div class="filter-bar">
       <div class="form-group">

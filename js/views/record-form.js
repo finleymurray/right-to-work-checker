@@ -103,15 +103,19 @@ export async function render(el, recordId) {
   if (isEdit) {
     existing = await fetchRecord(recordId);
 
-    // Enforce 5-minute edit lock
-    const createdAt = existing.created_at ? new Date(existing.created_at) : null;
-    if (createdAt && (Date.now() - createdAt.getTime() > 5 * 60 * 1000)) {
-      el.innerHTML = `
-        <div class="info-banner" style="margin-top:20px;">
-          This record can no longer be edited. Records are locked 5 minutes after submission.
-        </div>
-        <a href="#/record/${recordId}" class="btn btn-secondary" style="margin-top:12px;">Back to record</a>`;
-      return;
+    // Skip edit lock for pending onboarding records (they need to be completed)
+    const isFromOnboarding = !!existing.onboarding_id;
+    if (!isFromOnboarding) {
+      // Enforce 5-minute edit lock
+      const createdAt = existing.created_at ? new Date(existing.created_at) : null;
+      if (createdAt && (Date.now() - createdAt.getTime() > 5 * 60 * 1000)) {
+        el.innerHTML = `
+          <div class="info-banner" style="margin-top:20px;">
+            This record can no longer be edited. Records are locked 5 minutes after submission.
+          </div>
+          <a href="#/record/${recordId}" class="btn btn-secondary" style="margin-top:12px;">Back to record</a>`;
+        return;
+      }
     }
   }
 
@@ -121,8 +125,16 @@ export async function render(el, recordId) {
   const verAnswers = existing ? (existing.verification_answers || {}) : {};
   const activeMethod = existing ? (existing.check_method || 'manual') : 'manual';
 
+  const isFromOnboarding = existing && !!existing.onboarding_id;
+
   el.innerHTML = `
     <h2 style="margin-bottom:20px;">${esc(heading)}</h2>
+
+    ${isFromOnboarding ? `
+      <div class="onboarding-info-banner">
+        This record was created from the Onboarding Portal. Name and date of birth are pre-filled and cannot be changed.
+      </div>
+    ` : ''}
 
     <div id="error-summary" class="error-summary" style="display:none;">
       <h2>There is a problem</h2>
@@ -139,12 +151,14 @@ export async function render(el, recordId) {
           <div class="form-group">
             <label for="person_name">Name of person</label>
             <input type="text" id="person_name" name="person_name" required
-              value="${existing ? esc(existing.person_name) : ''}">
+              value="${existing ? esc(existing.person_name) : ''}"
+              ${isFromOnboarding ? 'readonly class="readonly-field"' : ''}>
           </div>
           <div class="form-group">
             <label for="date_of_birth">Date of birth</label>
             <input type="date" id="date_of_birth" name="date_of_birth" required
-              value="${existing ? (existing.date_of_birth || '') : ''}">
+              value="${existing ? (existing.date_of_birth || '') : ''}"
+              ${isFromOnboarding ? 'readonly class="readonly-field"' : ''}>
           </div>
         </div>
 

@@ -994,3 +994,52 @@ input[readonly] {
   .admin-tabs { flex-wrap: wrap; }
   .user-info { margin-left: 0; }
 }
+
+/* ---- Pending Onboarding ---- */
+.badge-pending-onboarding {
+  background: #fef3cd;
+  color: #856404;
+  border: 1px solid #ffc107;
+}
+
+.pending-onboarding-section {
+  background: #fffbeb;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.pending-onboarding-section h2 {
+  font-size: 18px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pending-onboarding-desc {
+  color: var(--ho-grey);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.pending-table {
+  margin-bottom: 0;
+}
+
+.onboarding-info-banner {
+  background: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.readonly-field {
+  background: #e9ecef !important;
+  color: var(--ho-grey) !important;
+  cursor: not-allowed;
+}

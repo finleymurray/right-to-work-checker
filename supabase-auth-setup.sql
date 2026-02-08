@@ -262,6 +262,94 @@ CREATE POLICY "managers_insert_deleted"
 -- (person_name, date_of_birth, share_code, verification_answers, additional_notes)
 -- from audit_log entries for a given record_id, preserving the audit trail structure
 -- but removing personal data.
+-- ============================================================
+-- 12a. Cross-site notifications table
+-- ============================================================
+
+-- Stores notifications that can be shown on the immersivecore.network landing page.
+-- Any sub-site (rtw, training, etc.) can create notifications via the Supabase API.
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_app TEXT NOT NULL DEFAULT 'rtw-checker',
+  severity TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'urgent')),
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  action_url TEXT,
+  record_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  dismissed_at TIMESTAMPTZ,
+  dismissed_by UUID REFERENCES auth.users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_source_app ON notifications(source_app);
+
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+-- Managers can read and update (dismiss) notifications
+DROP POLICY IF EXISTS "managers_read_notifications" ON notifications;
+CREATE POLICY "managers_read_notifications"
+  ON notifications FOR SELECT TO authenticated
+  USING (public.is_manager());
+
+DROP POLICY IF EXISTS "managers_update_notifications" ON notifications;
+CREATE POLICY "managers_update_notifications"
+  ON notifications FOR UPDATE TO authenticated
+  USING (public.is_manager());
+
+-- Any authenticated user can create notifications (sub-sites need this)
+DROP POLICY IF EXISTS "auth_insert_notifications" ON notifications;
+CREATE POLICY "auth_insert_notifications"
+  ON notifications FOR INSERT TO authenticated
+  WITH CHECK (true);
+
+-- ============================================================
+-- 12b. GDPR — Server-side auto-delete expired records (pg_cron)
+-- ============================================================
+
+-- This function runs autonomously via pg_cron to delete records
+-- past their retention period, without requiring a manager to visit
+-- the retention page. It logs each deletion, removes scans, and
+-- scrubs audit data.
+CREATE OR REPLACE FUNCTION public.auto_delete_expired_records()
+RETURNS VOID AS $$
+DECLARE
+  rec RECORD;
+BEGIN
+  FOR rec IN
+    SELECT * FROM rtw_records
+    WHERE deletion_due_date IS NOT NULL
+      AND deletion_due_date <= CURRENT_DATE
+  LOOP
+    -- Log to deleted_records audit trail
+    INSERT INTO deleted_records (original_record_id, person_name, employment_start_date, employment_end_date, deletion_due_date, deleted_by_email, reason)
+    VALUES (rec.id, rec.person_name, rec.check_date, rec.employment_end_date, rec.deletion_due_date, 'system@auto-delete', 'GDPR retention period expired (auto)');
+
+    -- Delete storage objects for this record
+    DELETE FROM storage.objects
+    WHERE bucket_id = 'document-scans'
+      AND (name LIKE rec.id::text || '/%');
+
+    -- Delete the record itself
+    DELETE FROM rtw_records WHERE id = rec.id;
+
+    -- Scrub personal data from audit log
+    PERFORM public.scrub_audit_personal_data(rec.id);
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Schedule: run daily at 02:00 UTC
+-- NOTE: pg_cron must be enabled in your Supabase project (Database > Extensions > pg_cron)
+-- Then run this in the SQL editor:
+--   SELECT cron.schedule('gdpr-auto-delete', '0 2 * * *', 'SELECT public.auto_delete_expired_records()');
+-- To check scheduled jobs: SELECT * FROM cron.job;
+-- To remove: SELECT cron.unschedule('gdpr-auto-delete');
+
+-- ============================================================
+-- 12c. GDPR — Scrub personal data from audit_log
+-- ============================================================
+
 CREATE OR REPLACE FUNCTION public.scrub_audit_personal_data(target_record_id UUID)
 RETURNS VOID AS $$
 DECLARE
@@ -277,3 +365,166 @@ BEGIN
   END LOOP;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================
+-- 13. Server-side notification generation for records needing attention
+-- ============================================================
+-- This function checks all rtw_records and creates notifications
+-- for any that need attention (follow-up due, expired, overdue,
+-- pending deletion). It avoids duplicates by checking if an
+-- undismissed notification already exists for the same record + action.
+-- Schedule via pg_cron alongside the auto-delete job.
+
+CREATE OR REPLACE FUNCTION public.generate_rtw_notifications()
+RETURNS VOID AS $$
+DECLARE
+  rec RECORD;
+  today DATE := CURRENT_DATE;
+  warning_date DATE := CURRENT_DATE + INTERVAL '28 days';
+  notif_exists BOOLEAN;
+BEGIN
+  -- 1. Records pending deletion (deletion_due_date has passed)
+  FOR rec IN
+    SELECT id, person_name, deletion_due_date
+    FROM rtw_records
+    WHERE deletion_due_date IS NOT NULL AND deletion_due_date <= today
+  LOOP
+    SELECT EXISTS (
+      SELECT 1 FROM notifications
+      WHERE record_id = rec.id
+        AND source_app = 'rtw-checker'
+        AND title LIKE 'Pending Deletion%'
+        AND dismissed_at IS NULL
+    ) INTO notif_exists;
+
+    IF NOT notif_exists THEN
+      INSERT INTO notifications (source_app, severity, title, message, action_url, record_id)
+      VALUES (
+        'rtw-checker', 'urgent',
+        'Pending Deletion: ' || rec.person_name,
+        'GDPR retention period has expired for ' || rec.person_name || '. Record is due for deletion (due ' || rec.deletion_due_date || ').',
+        'https://rtw.immersivecore.network/#/retention',
+        rec.id
+      );
+    END IF;
+  END LOOP;
+
+  -- 2. Expired records (expiry_date has passed)
+  FOR rec IN
+    SELECT id, person_name, expiry_date
+    FROM rtw_records
+    WHERE expiry_date IS NOT NULL AND expiry_date < today
+      AND (deletion_due_date IS NULL OR deletion_due_date > today)
+  LOOP
+    SELECT EXISTS (
+      SELECT 1 FROM notifications
+      WHERE record_id = rec.id
+        AND source_app = 'rtw-checker'
+        AND title LIKE 'Expired%'
+        AND dismissed_at IS NULL
+    ) INTO notif_exists;
+
+    IF NOT notif_exists THEN
+      INSERT INTO notifications (source_app, severity, title, message, action_url, record_id)
+      VALUES (
+        'rtw-checker', 'urgent',
+        'Expired: ' || rec.person_name,
+        'Right to work check for ' || rec.person_name || ' expired on ' || rec.expiry_date || '. A new check is required.',
+        'https://rtw.immersivecore.network/#/record/' || rec.id,
+        rec.id
+      );
+    END IF;
+  END LOOP;
+
+  -- 3. Follow-up overdue (follow_up_date has passed)
+  FOR rec IN
+    SELECT id, person_name, follow_up_date
+    FROM rtw_records
+    WHERE follow_up_date IS NOT NULL AND follow_up_date < today
+      AND (expiry_date IS NULL OR expiry_date >= today)
+      AND (deletion_due_date IS NULL OR deletion_due_date > today)
+  LOOP
+    SELECT EXISTS (
+      SELECT 1 FROM notifications
+      WHERE record_id = rec.id
+        AND source_app = 'rtw-checker'
+        AND title LIKE 'Overdue%'
+        AND dismissed_at IS NULL
+    ) INTO notif_exists;
+
+    IF NOT notif_exists THEN
+      INSERT INTO notifications (source_app, severity, title, message, action_url, record_id)
+      VALUES (
+        'rtw-checker', 'warning',
+        'Overdue: ' || rec.person_name,
+        'Follow-up check for ' || rec.person_name || ' was due on ' || rec.follow_up_date || '.',
+        'https://rtw.immersivecore.network/#/record/' || rec.id,
+        rec.id
+      );
+    END IF;
+  END LOOP;
+
+  -- 4. Follow-up due within 28 days
+  FOR rec IN
+    SELECT id, person_name, follow_up_date
+    FROM rtw_records
+    WHERE follow_up_date IS NOT NULL
+      AND follow_up_date >= today AND follow_up_date <= warning_date
+      AND (expiry_date IS NULL OR expiry_date >= today)
+      AND (deletion_due_date IS NULL OR deletion_due_date > today)
+  LOOP
+    SELECT EXISTS (
+      SELECT 1 FROM notifications
+      WHERE record_id = rec.id
+        AND source_app = 'rtw-checker'
+        AND title LIKE 'Follow-up Due%'
+        AND dismissed_at IS NULL
+    ) INTO notif_exists;
+
+    IF NOT notif_exists THEN
+      INSERT INTO notifications (source_app, severity, title, message, action_url, record_id)
+      VALUES (
+        'rtw-checker', 'info',
+        'Follow-up Due: ' || rec.person_name,
+        'Follow-up check for ' || rec.person_name || ' is due on ' || rec.follow_up_date || '.',
+        'https://rtw.immersivecore.network/#/record/' || rec.id,
+        rec.id
+      );
+    END IF;
+  END LOOP;
+
+  -- 5. Expiry approaching within 28 days
+  FOR rec IN
+    SELECT id, person_name, expiry_date
+    FROM rtw_records
+    WHERE expiry_date IS NOT NULL
+      AND expiry_date >= today AND expiry_date <= warning_date
+      AND (follow_up_date IS NULL OR follow_up_date > warning_date)
+      AND (deletion_due_date IS NULL OR deletion_due_date > today)
+  LOOP
+    SELECT EXISTS (
+      SELECT 1 FROM notifications
+      WHERE record_id = rec.id
+        AND source_app = 'rtw-checker'
+        AND title LIKE 'Expiring Soon%'
+        AND dismissed_at IS NULL
+    ) INTO notif_exists;
+
+    IF NOT notif_exists THEN
+      INSERT INTO notifications (source_app, severity, title, message, action_url, record_id)
+      VALUES (
+        'rtw-checker', 'warning',
+        'Expiring Soon: ' || rec.person_name,
+        'Right to work check for ' || rec.person_name || ' expires on ' || rec.expiry_date || '.',
+        'https://rtw.immersivecore.network/#/record/' || rec.id,
+        rec.id
+      );
+    END IF;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Schedule: run daily at 06:00 UTC (after auto-delete at 02:00)
+--   SELECT cron.schedule('rtw-notifications', '0 6 * * *', 'SELECT public.generate_rtw_notifications()');
+-- To check: SELECT * FROM cron.job;
+-- To remove: SELECT cron.unschedule('rtw-notifications');

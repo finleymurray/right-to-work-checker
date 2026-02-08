@@ -556,6 +556,13 @@ export async function render(el, recordId) {
         }
       }
 
+      // Trigger async Google Drive upload for new records
+      if (!isEdit) {
+        document.dispatchEvent(new CustomEvent('rtw-record-created', {
+          detail: { recordId: record.id, personName: data.person_name },
+        }));
+      }
+
       // Navigate to the record detail view
       window.location.hash = `#/record/${record.id}`;
     } catch (err) {

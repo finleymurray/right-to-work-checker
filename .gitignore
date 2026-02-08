@@ -1,1 +1,4 @@
 .DS_Store
+google-credentials.json
+*_base64.txt
+temp-landing-page-clone/

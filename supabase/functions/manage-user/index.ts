@@ -101,7 +101,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "delete") {
-      // Delete from auth (cascades to profiles via FK)
+      // Nullify FK references in tables that reference auth.users(id)
+      // so the cascade from auth.users deletion doesn't fail on constraints
+      await adminClient.from("audit_log").update({ user_id: null }).eq("user_id", user_id);
+      await adminClient.from("rtw_records").update({ created_by: null }).eq("created_by", user_id);
+      await adminClient.from("deleted_records").update({ deleted_by: null }).eq("deleted_by", user_id);
+
+      // Delete from auth (cascades to profiles via ON DELETE CASCADE)
       const { error: deleteError } = await adminClient.auth.admin.deleteUser(user_id);
 
       if (deleteError) {

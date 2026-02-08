@@ -88,6 +88,60 @@ document.addEventListener('generate-pdf', async (e) => {
   });
 });
 
+// ---- Auto-upload RTW PDF to Google Drive on record creation ----
+document.addEventListener('rtw-record-created', async (e) => {
+  const { recordId, personName } = e.detail;
+
+  try {
+    const { fetchRecord } = await import('./js/services/records-service.js');
+    const { getDocumentScanUrl } = await import('./js/services/storage-service.js');
+    const { generatePDFBlob, fetchScanAsDataUrl } = await import('./js/utils/pdf-generator.js');
+    const { uploadToGoogleDrive } = await import('./js/services/gdrive-service.js');
+
+    const record = await fetchRecord(recordId);
+
+    // Generate the PDF as a blob
+    let scanDataUrl = null;
+    if (record.document_scan_path) {
+      const signedUrl = await getDocumentScanUrl(record.document_scan_path);
+      scanDataUrl = await fetchScanAsDataUrl(signedUrl, record.document_scan_filename);
+    }
+
+    const pdfBlob = generatePDFBlob(record, scanDataUrl);
+    if (!pdfBlob) {
+      console.error('GDrive upload: PDF library not available');
+      return;
+    }
+
+    // Convert blob to base64
+    const arrayBuffer = await pdfBlob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const fileBase64 = btoa(binary);
+
+    // Build filename
+    const safeName = (personName || 'record').replace(/[^a-zA-Z0-9 ]/g, '').trim();
+    const dateStr = (record.check_date || '').replace(/-/g, '');
+    const fileName = `RTW_${safeName}_${dateStr}.pdf`;
+
+    // Upload to Google Drive
+    await uploadToGoogleDrive({
+      employeeName: personName,
+      fileName,
+      fileBase64,
+      subfolder: 'Right to Work',
+    });
+
+    console.log(`RTW PDF uploaded to Google Drive for ${personName}`);
+  } catch (err) {
+    // Don't break the user flow — this is a background operation
+    console.error('Failed to upload RTW PDF to Google Drive:', err);
+  }
+});
+
 // ---- Nav auth state ----
 async function updateNavAuth(session) {
   const userInfoEl = document.getElementById('user-info');

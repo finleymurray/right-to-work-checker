@@ -1,4 +1,4 @@
-import { fetchRecord, deleteRecord } from '../services/records-service.js';
+import { fetchRecord, deleteRecord, updateRecord } from '../services/records-service.js';
 import { getDocumentScanUrl, deleteRecordScans } from '../services/storage-service.js';
 import { calculateStatus, STATUS_LABELS, STATUS_CLASSES } from '../services/status-service.js';
 import { formatDateUK, daysUntil } from '../utils/date-utils.js';
@@ -269,6 +269,28 @@ export async function render(el, recordId) {
 
       ${warningBanner}
 
+      <section class="detail-section" id="end-date-section">
+        <h3 class="detail-section-title">Employment End Date</h3>
+        <div class="detail-section-body">
+          <p style="font-size:14px;color:var(--ho-grey);margin-bottom:10px;">
+            ${record.employment_end_date
+              ? 'Current end date: <strong>' + escapeHtml(formatDateUK(record.employment_end_date)) + '</strong>' + (record.deletion_due_date ? ' &mdash; record deletion due ' + escapeHtml(formatDateUK(record.deletion_due_date)) : '')
+              : 'No employment end date set. Set one when the employee leaves.'}
+          </p>
+          <div class="form-row" style="align-items:flex-end;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label for="end-date-input">Employment end date</label>
+              <input type="date" id="end-date-input" value="${record.employment_end_date || ''}" style="max-width:220px;">
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn btn-primary btn-small" id="save-end-date-btn">Save</button>
+              ${record.employment_end_date ? '<button type="button" class="btn btn-secondary btn-small" id="clear-end-date-btn">Clear</button>' : ''}
+            </div>
+          </div>
+          <div id="end-date-msg" style="margin-top:8px;font-size:13px;"></div>
+        </div>
+      </section>
+
       <div class="detail-grid">
         ${fieldHtml('Name of person', record.person_name)}
         ${fieldHtml('Date of birth', formatDateUK(record.date_of_birth))}
@@ -280,8 +302,6 @@ export async function render(el, recordId) {
         ${shareCodeField}
         ${idspField}
         ${fieldHtml('Checker name', record.checker_name)}
-        ${employmentEndField}
-        ${deletionDueField}
       </div>
 
       <section class="detail-section">
@@ -327,6 +347,56 @@ export async function render(el, recordId) {
   if (editBtn) {
     editBtn.addEventListener('click', () => {
       navigate(`/record/${recordId}/edit`);
+    });
+  }
+
+  // Save employment end date
+  const saveEndDateBtn = el.querySelector('#save-end-date-btn');
+  const clearEndDateBtn = el.querySelector('#clear-end-date-btn');
+  const endDateInput = el.querySelector('#end-date-input');
+  const endDateMsg = el.querySelector('#end-date-msg');
+
+  if (saveEndDateBtn) {
+    saveEndDateBtn.addEventListener('click', async () => {
+      const value = endDateInput.value || null;
+      let deletionDue = null;
+      if (value) {
+        const d = new Date(value + 'T00:00:00');
+        d.setFullYear(d.getFullYear() + 2);
+        deletionDue = d.toISOString().slice(0, 10);
+      }
+
+      saveEndDateBtn.disabled = true;
+      saveEndDateBtn.textContent = 'Saving\u2026';
+      endDateMsg.textContent = '';
+
+      try {
+        await updateRecord(recordId, { employment_end_date: value, deletion_due_date: deletionDue });
+        await render(el, recordId);
+      } catch (err) {
+        endDateMsg.textContent = 'Failed to save: ' + err.message;
+        endDateMsg.style.color = 'var(--ho-red)';
+        saveEndDateBtn.disabled = false;
+        saveEndDateBtn.textContent = 'Save';
+      }
+    });
+  }
+
+  if (clearEndDateBtn) {
+    clearEndDateBtn.addEventListener('click', async () => {
+      clearEndDateBtn.disabled = true;
+      clearEndDateBtn.textContent = 'Clearing\u2026';
+      endDateMsg.textContent = '';
+
+      try {
+        await updateRecord(recordId, { employment_end_date: null, deletion_due_date: null });
+        await render(el, recordId);
+      } catch (err) {
+        endDateMsg.textContent = 'Failed to clear: ' + err.message;
+        endDateMsg.style.color = 'var(--ho-red)';
+        clearEndDateBtn.disabled = false;
+        clearEndDateBtn.textContent = 'Clear';
+      }
     });
   }
 

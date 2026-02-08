@@ -105,25 +105,24 @@ RETURNS BOOLEAN AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- 8. RLS Policies — rtw_records
-
--- [SECURE UPDATE] Staff see only their own, Managers see all
+-- Staff see only their own records; managers see all.
 DROP POLICY IF EXISTS "auth_select_records" ON rtw_records;
 CREATE POLICY "auth_select_records"
   ON rtw_records FOR SELECT TO authenticated
-  USING (
-    (select role from profiles where id = auth.uid()) = 'manager'
-    OR
-    created_by = auth.uid()
-  );
+  USING (created_by = auth.uid() OR public.is_manager());
 
+-- Anyone authenticated can insert (created_by is set in app code).
 DROP POLICY IF EXISTS "auth_insert_records" ON rtw_records;
 CREATE POLICY "auth_insert_records"
   ON rtw_records FOR INSERT TO authenticated WITH CHECK (true);
 
+-- Staff can only update their own records; managers can update all.
 DROP POLICY IF EXISTS "auth_update_records" ON rtw_records;
 CREATE POLICY "auth_update_records"
-  ON rtw_records FOR UPDATE TO authenticated USING (true);
+  ON rtw_records FOR UPDATE TO authenticated
+  USING (created_by = auth.uid() OR public.is_manager());
 
+-- Only managers can delete.
 DROP POLICY IF EXISTS "manager_delete_records" ON rtw_records;
 CREATE POLICY "manager_delete_records"
   ON rtw_records FOR DELETE TO authenticated
@@ -162,29 +161,52 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('document-scans', 'document-scans', false)
 ON CONFLICT (id) DO NOTHING;
 
--- Allow authenticated users to upload scans
+-- Helper: check if the current user owns the record that a scan belongs to.
+-- Storage paths are "recordId/filename", so the first path segment is the record UUID.
+CREATE OR REPLACE FUNCTION public.owns_scan(object_name TEXT)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.rtw_records
+    WHERE id = (split_part(object_name, '/', 1))::uuid
+      AND created_by = auth.uid()
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- Staff can upload scans for their own records; managers can upload for any.
 DROP POLICY IF EXISTS "auth_upload_scans" ON storage.objects;
 CREATE POLICY "auth_upload_scans"
   ON storage.objects FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'document-scans');
+  WITH CHECK (
+    bucket_id = 'document-scans'
+    AND (public.owns_scan(name) OR public.is_manager())
+  );
 
--- Allow authenticated users to read scans
+-- Staff can read scans for their own records; managers can read all.
 DROP POLICY IF EXISTS "auth_read_scans" ON storage.objects;
 CREATE POLICY "auth_read_scans"
   ON storage.objects FOR SELECT TO authenticated
-  USING (bucket_id = 'document-scans');
+  USING (
+    bucket_id = 'document-scans'
+    AND (public.owns_scan(name) OR public.is_manager())
+  );
 
--- Allow authenticated users to update (overwrite) scans
+-- Staff can update scans for their own records; managers can update all.
 DROP POLICY IF EXISTS "auth_update_scans" ON storage.objects;
 CREATE POLICY "auth_update_scans"
   ON storage.objects FOR UPDATE TO authenticated
-  USING (bucket_id = 'document-scans');
+  USING (
+    bucket_id = 'document-scans'
+    AND (public.owns_scan(name) OR public.is_manager())
+  );
 
--- Allow authenticated users to delete scans
+-- Only managers can delete scans (matches record deletion being manager-only).
 DROP POLICY IF EXISTS "auth_delete_scans" ON storage.objects;
 CREATE POLICY "auth_delete_scans"
   ON storage.objects FOR DELETE TO authenticated
-  USING (bucket_id = 'document-scans');
+  USING (
+    bucket_id = 'document-scans'
+    AND public.is_manager()
+  );
 
 -- ============================================================
 -- 11. GDPR Retention — employment end date + deleted records log

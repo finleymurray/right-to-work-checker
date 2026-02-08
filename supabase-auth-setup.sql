@@ -105,9 +105,16 @@ RETURNS BOOLEAN AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- 8. RLS Policies — rtw_records
+
+-- [SECURE UPDATE] Staff see only their own, Managers see all
 DROP POLICY IF EXISTS "auth_select_records" ON rtw_records;
 CREATE POLICY "auth_select_records"
-  ON rtw_records FOR SELECT TO authenticated USING (true);
+  ON rtw_records FOR SELECT TO authenticated
+  USING (
+    (select role from profiles where id = auth.uid()) = 'manager'
+    OR
+    created_by = auth.uid()
+  );
 
 DROP POLICY IF EXISTS "auth_insert_records" ON rtw_records;
 CREATE POLICY "auth_insert_records"

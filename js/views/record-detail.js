@@ -448,6 +448,13 @@ export async function render(el, recordId) {
           }
         }
 
+        // Clear foreign key reference from any linked onboarding record
+        const { getSupabase } = await import('../supabase-client.js');
+        await getSupabase()
+          .from('onboarding_records')
+          .update({ rtw_record_id: null })
+          .eq('rtw_record_id', recordId);
+
         await deleteRecordScans(recordId);
         await deleteRecord(recordId);
         navigate('/');

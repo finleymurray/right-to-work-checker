@@ -108,6 +108,13 @@ export async function autoDeleteExpiredRecords() {
         }
       }
 
+      // Clear foreign key reference from any linked onboarding record
+      const { error: fkErr } = await getSupabase()
+        .from('onboarding_records')
+        .update({ rtw_record_id: null })
+        .eq('rtw_record_id', record.id);
+      if (fkErr) console.error('Failed to clear onboarding FK (continuing):', fkErr);
+
       await deleteRecordScans(record.id);
       await deleteRecord(record.id);
       // Scrub personal data from audit_log entries for this record (GDPR)

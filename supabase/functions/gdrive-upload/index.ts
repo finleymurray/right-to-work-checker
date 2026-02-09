@@ -260,10 +260,13 @@ Deno.serve(async (req: Request) => {
     // Ensure employee folder exists
     const employeeFolderId = await ensureFolder(token, employee_name, rootFolderId);
 
-    // Ensure subfolder if specified
+    // Ensure subfolder(s) — supports nested paths like 'Training Records/Fire Safety'
     let targetFolderId = employeeFolderId;
     if (subfolder) {
-      targetFolderId = await ensureFolder(token, subfolder, employeeFolderId);
+      const parts = subfolder.split('/').filter(Boolean);
+      for (const part of parts) {
+        targetFolderId = await ensureFolder(token, part, targetFolderId);
+      }
     }
 
     // Upload the file

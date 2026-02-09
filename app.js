@@ -114,13 +114,12 @@ document.addEventListener('rtw-record-created', async (e) => {
     }
 
     // Convert blob to base64
-    const arrayBuffer = await pdfBlob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const fileBase64 = btoa(binary);
+    const fileBase64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(pdfBlob);
+    });
 
     // Build filename
     const safeName = (personName || 'record').replace(/[^a-zA-Z0-9 ]/g, '').trim();

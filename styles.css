@@ -89,6 +89,8 @@ body {
 .header-nav-dropdown {
   position: relative;
   margin-left: auto;
+  padding-bottom: 8px;
+  margin-bottom: -8px;
 }
 .header-home-btn {
   display: inline-block;
@@ -110,13 +112,12 @@ body {
   position: absolute;
   right: 0;
   top: 100%;
-  margin-top: 4px;
+  min-width: 180px;
+  z-index: 1000;
   background: #fff;
   border: 1px solid var(--ho-border);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  min-width: 180px;
-  z-index: 1000;
 }
 .header-nav-dropdown:hover .header-dropdown-menu {
   display: block;

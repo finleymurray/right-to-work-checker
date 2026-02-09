@@ -437,6 +437,17 @@ export async function render(el, recordId) {
         const user = await getUser();
         const profile = await getUserProfile();
         await logRecordDeletion(record, user.id, profile?.email || user.email);
+
+        // Delete RTW PDF from Google Drive
+        if (record.gdrive_file_id) {
+          try {
+            const { deleteFileFromGoogleDrive } = await import('../services/gdrive-service.js');
+            await deleteFileFromGoogleDrive(record.gdrive_file_id);
+          } catch (driveErr) {
+            console.error('Drive file delete failed (continuing):', driveErr);
+          }
+        }
+
         await deleteRecordScans(recordId);
         await deleteRecord(recordId);
         navigate('/');

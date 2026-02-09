@@ -91,6 +91,27 @@ async function ensureFolder(
 }
 
 /**
+ * Delete a file or folder by ID. Ignores 404 (already deleted).
+ */
+async function deleteItem(
+  token: string,
+  itemId: string
+): Promise<void> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${itemId}?supportsAllDrives=true`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  // 204 = success, 404 = already gone — both are fine
+  if (!res.ok && res.status !== 404) {
+    const data = await res.json();
+    throw new Error(`Delete error: ${JSON.stringify(data)}`);
+  }
+}
+
+/**
  * Upload a file to a specific folder using base64-encoded content.
  */
 async function uploadFile(
@@ -160,9 +181,50 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    console.log("Auth: bearer token present");
 
-    // 2. Parse request
+    // 2. Parse request and dispatch by action
+    const body = await req.json();
+    const action = body.action || "upload";
+    console.log(`Action: ${action}`);
+
+    // Get Google access token for all actions
+    const token = await getAccessToken();
+
+    // ---- DELETE FILE ----
+    if (action === "delete_file") {
+      const { file_id } = body;
+      if (!file_id) {
+        return new Response(
+          JSON.stringify({ error: "file_id is required for delete_file" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.log(`Deleting file: ${file_id}`);
+      await deleteItem(token, file_id);
+      return new Response(
+        JSON.stringify({ success: true, deleted: file_id }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ---- DELETE FOLDER ----
+    if (action === "delete_folder") {
+      const { folder_id } = body;
+      if (!folder_id) {
+        return new Response(
+          JSON.stringify({ error: "folder_id is required for delete_folder" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.log(`Deleting folder (recursive): ${folder_id}`);
+      await deleteItem(token, folder_id);
+      return new Response(
+        JSON.stringify({ success: true, deleted: folder_id }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ---- UPLOAD or REPLACE ----
     const {
       employee_name,
       file_name,
@@ -170,7 +232,8 @@ Deno.serve(async (req: Request) => {
       mime_type,
       subfolder,
       source_app,
-    } = await req.json();
+      old_file_id,
+    } = body;
 
     if (!employee_name || !file_name || !file_base64) {
       return new Response(
@@ -179,7 +242,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 3. Load root folder ID from env
+    // If replacing, delete the old file first
+    if (action === "replace" && old_file_id) {
+      console.log(`Replacing: deleting old file ${old_file_id}`);
+      await deleteItem(token, old_file_id);
+    }
+
+    // Load root folder ID from env
     const rootFolderId = Deno.env.get("GOOGLE_DRIVE_ROOT_FOLDER_ID");
     if (!rootFolderId) {
       return new Response(
@@ -188,26 +257,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 4. Get Google access token via OAuth2 refresh token
-    const token = await getAccessToken();
-    console.log("Google access token obtained via OAuth2 refresh");
-
-    // 5. Ensure employee folder exists: HR - Employee Files / {Employee Name}
-    console.log(`Looking for employee folder: "${employee_name}" in root ${rootFolderId}`);
+    // Ensure employee folder exists
     const employeeFolderId = await ensureFolder(token, employee_name, rootFolderId);
-    console.log(`Employee folder ID: ${employeeFolderId}`);
 
-    // 6. If a subfolder is specified (e.g. "Right to Work", "Onboarding"),
-    //    create it inside the employee folder
+    // Ensure subfolder if specified
     let targetFolderId = employeeFolderId;
     if (subfolder) {
-      console.log(`Looking for subfolder: "${subfolder}" in employee folder ${employeeFolderId}`);
       targetFolderId = await ensureFolder(token, subfolder, employeeFolderId);
-      console.log(`Subfolder ID: ${targetFolderId}`);
     }
 
-    // 7. Upload the file
-    console.log(`Uploading file: "${file_name}" (${(file_base64.length / 1024).toFixed(1)}KB base64) to folder ${targetFolderId}`);
+    // Upload the file
+    console.log(`Uploading: "${file_name}" to folder ${targetFolderId}`);
     const result = await uploadFile(
       token,
       file_name,

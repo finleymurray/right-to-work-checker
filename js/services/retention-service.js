@@ -97,6 +97,17 @@ export async function autoDeleteExpiredRecords() {
   for (const record of records) {
     try {
       await logRecordDeletion(record, userId, userEmail);
+
+      // Delete RTW PDF from Google Drive
+      if (record.gdrive_file_id) {
+        try {
+          const { deleteFileFromGoogleDrive } = await import('./gdrive-service.js');
+          await deleteFileFromGoogleDrive(record.gdrive_file_id);
+        } catch (driveErr) {
+          console.error('Drive file delete failed (continuing):', driveErr);
+        }
+      }
+
       await deleteRecordScans(record.id);
       await deleteRecord(record.id);
       // Scrub personal data from audit_log entries for this record (GDPR)

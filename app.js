@@ -127,17 +127,93 @@ document.addEventListener('rtw-record-created', async (e) => {
     const fileName = `RTW_${safeName}_${dateStr}.pdf`;
 
     // Upload to Google Drive
-    await uploadToGoogleDrive({
+    const driveResult = await uploadToGoogleDrive({
       employeeName: personName,
       fileName,
       fileBase64,
       subfolder: 'Right to Work',
     });
 
+    // Save Drive IDs back to the RTW record
+    const { updateRecord } = await import('./js/services/records-service.js');
+    await updateRecord(recordId, {
+      gdrive_file_id: driveResult.file_id,
+      gdrive_pdf_link: driveResult.web_view_link,
+      gdrive_folder_id: driveResult.employee_folder_id,
+    });
+
     console.log(`RTW PDF uploaded to Google Drive for ${personName}`);
   } catch (err) {
     // Don't break the user flow — this is a background operation
     console.error('Failed to upload RTW PDF to Google Drive:', err);
+  }
+});
+
+// ---- Auto-replace RTW PDF in Google Drive on record update ----
+document.addEventListener('rtw-record-updated', async (e) => {
+  const { recordId } = e.detail;
+
+  try {
+    const { fetchRecord, updateRecord } = await import('./js/services/records-service.js');
+    const { getDocumentScanUrl } = await import('./js/services/storage-service.js');
+    const { generatePDFBlob, fetchScanAsDataUrl } = await import('./js/utils/pdf-generator.js');
+    const { uploadToGoogleDrive, replaceFileInGoogleDrive } = await import('./js/services/gdrive-service.js');
+
+    const record = await fetchRecord(recordId);
+
+    // Generate the PDF as a blob
+    let scanDataUrl = null;
+    if (record.document_scan_path) {
+      const signedUrl = await getDocumentScanUrl(record.document_scan_path);
+      scanDataUrl = await fetchScanAsDataUrl(signedUrl, record.document_scan_filename);
+    }
+
+    const pdfBlob = generatePDFBlob(record, scanDataUrl);
+    if (!pdfBlob) {
+      console.error('GDrive update: PDF library not available');
+      return;
+    }
+
+    const fileBase64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(pdfBlob);
+    });
+
+    const safeName = (record.person_name || 'record').replace(/[^a-zA-Z0-9 ]/g, '').trim();
+    const dateStr = (record.check_date || '').replace(/-/g, '');
+    const fileName = `RTW_${safeName}_${dateStr}.pdf`;
+
+    let driveResult;
+    if (record.gdrive_file_id) {
+      // Replace existing file
+      driveResult = await replaceFileInGoogleDrive({
+        oldFileId: record.gdrive_file_id,
+        employeeName: record.person_name,
+        fileName,
+        fileBase64,
+        subfolder: 'Right to Work',
+      });
+    } else {
+      // First-time upload (record existed before Drive sync)
+      driveResult = await uploadToGoogleDrive({
+        employeeName: record.person_name,
+        fileName,
+        fileBase64,
+        subfolder: 'Right to Work',
+      });
+    }
+
+    await updateRecord(recordId, {
+      gdrive_file_id: driveResult.file_id,
+      gdrive_pdf_link: driveResult.web_view_link,
+      gdrive_folder_id: driveResult.employee_folder_id,
+    });
+
+    console.log(`RTW PDF updated in Google Drive for ${record.person_name}`);
+  } catch (err) {
+    console.error('Failed to update RTW PDF in Google Drive:', err);
   }
 });
 

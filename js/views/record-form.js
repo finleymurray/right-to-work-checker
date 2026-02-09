@@ -593,6 +593,13 @@ export async function render(el, recordId) {
         }));
       }
 
+      // Trigger Google Drive PDF replacement for regular edits
+      if (isEdit && !(existing && existing.onboarding_id && !existing.check_date)) {
+        document.dispatchEvent(new CustomEvent('rtw-record-updated', {
+          detail: { recordId: record.id },
+        }));
+      }
+
       // Navigate to the record detail view
       window.location.hash = `#/record/${record.id}`;
     } catch (err) {

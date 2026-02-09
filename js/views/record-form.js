@@ -4,6 +4,7 @@ import { calculateStatus } from '../services/status-service.js';
 import { todayISO } from '../utils/date-utils.js';
 import { validateRecord } from '../utils/validation.js';
 import { getUserProfile, getUser } from '../services/auth-service.js';
+import { dismissNotificationsForRecord } from '../services/notification-service.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -541,6 +542,15 @@ export async function render(el, recordId) {
       let record;
 
       if (isEdit) {
+        // When a staff member completes a pending onboarding RTW check,
+        // assign created_by to them so the record becomes theirs
+        if (existing && existing.onboarding_id && !existing.check_date) {
+          try {
+            const user = await getUser();
+            if (user) data.created_by = user.id;
+          } catch (_) { /* non-fatal */ }
+        }
+
         // Update existing record
         record = await updateRecord(recordId, data);
 
@@ -571,11 +581,17 @@ export async function render(el, recordId) {
       }
 
       // If this record came from onboarding, mark the onboarding record as complete
+      // and dismiss any pending onboarding notifications for this record
       if (isEdit && existing && existing.onboarding_id) {
         try {
           await completeOnboardingRecord(existing.onboarding_id);
         } catch (onbErr) {
           console.error('Failed to complete onboarding record (non-blocking):', onbErr);
+        }
+        try {
+          await dismissNotificationsForRecord(record.id);
+        } catch (notifErr) {
+          console.error('Failed to dismiss notifications (non-blocking):', notifErr);
         }
       }
 

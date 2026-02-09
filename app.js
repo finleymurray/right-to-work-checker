@@ -40,7 +40,7 @@ addRoute('/', async (el) => {
 addRoute('/new', async (el) => {
   const { render } = await import('./js/views/record-form.js');
   await render(el);
-});
+}, { requiresManager: true });
 
 addRoute('/record/:id', async (el, params) => {
   const { render } = await import('./js/views/record-detail.js');
@@ -222,6 +222,7 @@ async function updateNavAuth(session) {
   const userInfoEl = document.getElementById('user-info');
   const adminLink = document.getElementById('admin-link');
   const retentionLink = document.getElementById('retention-link');
+  const manualRtwLink = document.getElementById('manual-rtw-link');
 
   if (!userInfoEl) return;
 
@@ -234,13 +235,16 @@ async function updateNavAuth(session) {
       `;
       userInfoEl.style.display = 'flex';
 
-      // Show/hide admin and retention links for managers
+      // Show/hide manager-only links
       const managerRole = profile?.role === 'manager';
       if (adminLink) {
         adminLink.style.display = managerRole ? '' : 'none';
       }
       if (retentionLink) {
         retentionLink.style.display = managerRole ? '' : 'none';
+      }
+      if (manualRtwLink) {
+        manualRtwLink.style.display = managerRole ? '' : 'none';
       }
 
       // Attach sign-out handler
@@ -260,6 +264,7 @@ async function updateNavAuth(session) {
     userInfoEl.style.display = 'none';
     if (adminLink) adminLink.style.display = 'none';
     if (retentionLink) retentionLink.style.display = 'none';
+    if (manualRtwLink) manualRtwLink.style.display = 'none';
   }
 }
 

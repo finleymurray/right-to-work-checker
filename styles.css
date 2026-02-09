@@ -85,6 +85,13 @@ body {
   border-bottom-color: var(--ho-blue);
   background: var(--ho-light);
 }
+.nav-home {
+  opacity: 0.7;
+  font-size: 14px;
+}
+.nav-home:hover {
+  opacity: 1;
+}
 .btn-nav {
   margin-left: auto;
   background: var(--ho-green);

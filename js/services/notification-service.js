@@ -53,3 +53,17 @@ export async function dismissNotification(notificationId) {
     .eq('id', notificationId);
   if (error) throw new Error('Failed to dismiss notification: ' + error.message);
 }
+
+/**
+ * Dismiss all undismissed notifications for a given record.
+ */
+export async function dismissNotificationsForRecord(recordId) {
+  const { error } = await getSupabase()
+    .from('notifications')
+    .update({ dismissed_at: new Date().toISOString() })
+    .eq('record_id', recordId)
+    .is('dismissed_at', null);
+  if (error) {
+    console.error('Failed to dismiss notifications for record:', error);
+  }
+}

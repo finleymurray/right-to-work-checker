@@ -227,7 +227,7 @@ function buildPendingOnboardingHTML(records) {
       <td>${name}</td>
       <td>${dob}</td>
       <td>${created}</td>
-      <td><a href="#/record/${r.id}/edit" class="btn btn-primary btn-sm">Start RTW Check</a></td>
+      <td><a href="#/record/${r.id}/edit" class="btn btn-primary btn-small">Start RTW Check</a></td>
     </tr>`;
   }).join('');
 

@@ -388,12 +388,12 @@ main.container {
   outline: 3px solid var(--ho-focus);
   outline-offset: 3px;
 }
-.btn-primary {
+.btn-primary, a.btn-primary, a.btn-primary:visited {
   background: var(--ho-green);
   color: #fff;
   box-shadow: 0 2px 0 #003d20;
 }
-.btn-primary:hover { background: #005a30; }
+.btn-primary:hover, a.btn-primary:hover { background: #005a30; color: #fff; }
 .btn-secondary {
   background: var(--ho-light);
   color: var(--ho-dark);

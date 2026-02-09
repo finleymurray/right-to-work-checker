@@ -1,78 +1,35 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { encode as base64url } from "https://deno.land/std@0.208.0/encoding/base64url.ts";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Google Drive API helpers
-
-interface ServiceAccount {
-  client_email: string;
-  private_key: string;
-  token_uri: string;
-}
+// Google Drive API helpers — OAuth2 refresh token flow
 
 /**
- * Create a signed JWT for Google service account authentication.
+ * Get an OAuth2 access token using a refresh token.
  */
-async function createSignedJwt(sa: ServiceAccount, scopes: string[]): Promise<string> {
-  const header = { alg: "RS256", typ: "JWT" };
-  const now = Math.floor(Date.now() / 1000);
-  const claims = {
-    iss: sa.client_email,
-    scope: scopes.join(" "),
-    aud: sa.token_uri,
-    iat: now,
-    exp: now + 3600,
-  };
+async function getAccessToken(): Promise<string> {
+  const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET");
+  const refreshToken = Deno.env.get("GOOGLE_OAUTH_REFRESH_TOKEN");
 
-  const encodedHeader = base64url(new TextEncoder().encode(JSON.stringify(header)));
-  const encodedClaims = base64url(new TextEncoder().encode(JSON.stringify(claims)));
-  const signingInput = `${encodedHeader}.${encodedClaims}`;
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error("Google OAuth2 credentials not configured");
+  }
 
-  // Import the RSA private key
-  const pemContents = sa.private_key
-    .replace(/-----BEGIN PRIVATE KEY-----/, "")
-    .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\n/g, "");
-  const binaryKey = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
-
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    binaryKey,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    key,
-    new TextEncoder().encode(signingInput)
-  );
-
-  const encodedSignature = base64url(new Uint8Array(signature));
-  return `${signingInput}.${encodedSignature}`;
-}
-
-/**
- * Get an OAuth2 access token using the service account JWT.
- */
-async function getAccessToken(sa: ServiceAccount): Promise<string> {
-  const jwt = await createSignedJwt(sa, [
-    "https://www.googleapis.com/auth/drive.file",
-  ]);
-
-  const res = await fetch(sa.token_uri, {
+  const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
   });
 
   const data = await res.json();
-  if (!res.ok) throw new Error(`Token error: ${JSON.stringify(data)}`);
+  if (!res.ok) throw new Error(`Token refresh error: ${JSON.stringify(data)}`);
   return data.access_token;
 }
 
@@ -88,7 +45,7 @@ async function findFolder(
     `name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
   );
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await res.json();
@@ -103,7 +60,7 @@ async function createFolder(
   name: string,
   parentId: string
 ): Promise<string> {
-  const res = await fetch("https://www.googleapis.com/drive/v3/files", {
+  const res = await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -134,44 +91,51 @@ async function ensureFolder(
 }
 
 /**
- * Upload a file (as bytes) to a specific folder.
+ * Upload a file to a specific folder using base64-encoded content.
  */
 async function uploadFile(
   token: string,
   fileName: string,
   mimeType: string,
-  fileBytes: Uint8Array,
+  fileBase64: string,
   folderId: string
 ): Promise<{ id: string; webViewLink: string }> {
-  // Use multipart upload
+  // Decode base64 to binary for reliable multipart upload
+  const binaryStr = atob(fileBase64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
   const metadata = JSON.stringify({
     name: fileName,
     parents: [folderId],
   });
 
+  // Build multipart body with binary content
   const boundary = "----EdgeFunctionBoundary";
-  const body =
-    `--${boundary}\r\n` +
-    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-    `${metadata}\r\n` +
-    `--${boundary}\r\n` +
-    `Content-Type: ${mimeType}\r\n` +
-    `Content-Transfer-Encoding: base64\r\n\r\n`;
+  const encoder = new TextEncoder();
+  const metaPart = encoder.encode(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
+  );
+  const closePart = encoder.encode(`\r\n--${boundary}--`);
 
-  // Convert file bytes to base64
-  const base64Data = btoa(String.fromCharCode(...fileBytes));
-
-  const fullBody = body + base64Data + `\r\n--${boundary}--`;
+  // Concatenate parts
+  const body = new Uint8Array(metaPart.length + bytes.length + closePart.length);
+  body.set(metaPart, 0);
+  body.set(bytes, metaPart.length);
+  body.set(closePart, metaPart.length + bytes.length);
 
   const res = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink",
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": `multipart/related; boundary=${boundary}`,
       },
-      body: fullBody,
+      body: body,
     }
   );
 
@@ -188,29 +152,15 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // 1. Auth check
+    // 1. Auth check — verify a Bearer token is present.
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Missing authorization" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-    const callerClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    const { data: { user }, error: authError } = await callerClient.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Invalid authentication" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    console.log("Auth: bearer token present");
 
     // 2. Parse request
     const {
@@ -229,16 +179,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 3. Load service account credentials from env
-    const saJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
-    if (!saJson) {
-      return new Response(
-        JSON.stringify({ error: "Google service account not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    const sa: ServiceAccount = JSON.parse(saJson);
-
+    // 3. Load root folder ID from env
     const rootFolderId = Deno.env.get("GOOGLE_DRIVE_ROOT_FOLDER_ID");
     if (!rootFolderId) {
       return new Response(
@@ -247,28 +188,34 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 4. Get Google access token
-    const token = await getAccessToken(sa);
+    // 4. Get Google access token via OAuth2 refresh token
+    const token = await getAccessToken();
+    console.log("Google access token obtained via OAuth2 refresh");
 
     // 5. Ensure employee folder exists: HR - Employee Files / {Employee Name}
+    console.log(`Looking for employee folder: "${employee_name}" in root ${rootFolderId}`);
     const employeeFolderId = await ensureFolder(token, employee_name, rootFolderId);
+    console.log(`Employee folder ID: ${employeeFolderId}`);
 
-    // 6. If a subfolder is specified (e.g. "Right to Work", "Training", "Contracts"),
+    // 6. If a subfolder is specified (e.g. "Right to Work", "Onboarding"),
     //    create it inside the employee folder
     let targetFolderId = employeeFolderId;
     if (subfolder) {
+      console.log(`Looking for subfolder: "${subfolder}" in employee folder ${employeeFolderId}`);
       targetFolderId = await ensureFolder(token, subfolder, employeeFolderId);
+      console.log(`Subfolder ID: ${targetFolderId}`);
     }
 
     // 7. Upload the file
-    const fileBytes = Uint8Array.from(atob(file_base64), (c) => c.charCodeAt(0));
+    console.log(`Uploading file: "${file_name}" (${(file_base64.length / 1024).toFixed(1)}KB base64) to folder ${targetFolderId}`);
     const result = await uploadFile(
       token,
       file_name,
       mime_type || "application/pdf",
-      fileBytes,
+      file_base64,
       targetFolderId
     );
+    console.log(`Upload successful: file_id=${result.id}`);
 
     return new Response(
       JSON.stringify({

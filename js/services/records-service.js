@@ -69,3 +69,14 @@ export async function batchUpdateStatuses(updates) {
       .eq('id', u.id);
   }
 }
+
+/**
+ * Mark the linked onboarding record as complete when the RTW check is done.
+ */
+export async function completeOnboardingRecord(onboardingId) {
+  const { error } = await getSupabase()
+    .from('onboarding_records')
+    .update({ status: 'complete', updated_at: new Date().toISOString() })
+    .eq('id', onboardingId);
+  if (error) throw new Error('Failed to update onboarding record: ' + error.message);
+}

@@ -1,4 +1,4 @@
-import { createRecord, fetchRecord, updateRecord } from '../services/records-service.js';
+import { createRecord, fetchRecord, updateRecord, completeOnboardingRecord } from '../services/records-service.js';
 import { uploadDocumentScan } from '../services/storage-service.js';
 import { calculateStatus } from '../services/status-service.js';
 import { todayISO } from '../utils/date-utils.js';
@@ -570,8 +570,24 @@ export async function render(el, recordId) {
         }
       }
 
+      // If this record came from onboarding, mark the onboarding record as complete
+      if (isEdit && existing && existing.onboarding_id) {
+        try {
+          await completeOnboardingRecord(existing.onboarding_id);
+        } catch (onbErr) {
+          console.error('Failed to complete onboarding record (non-blocking):', onbErr);
+        }
+      }
+
       // Trigger async Google Drive upload for new records
       if (!isEdit) {
+        document.dispatchEvent(new CustomEvent('rtw-record-created', {
+          detail: { recordId: record.id, personName: data.person_name },
+        }));
+      }
+
+      // Also trigger Google Drive upload for records coming from onboarding (first RTW save)
+      if (isEdit && existing && existing.onboarding_id && !existing.check_date) {
         document.dispatchEvent(new CustomEvent('rtw-record-created', {
           detail: { recordId: record.id, personName: data.person_name },
         }));

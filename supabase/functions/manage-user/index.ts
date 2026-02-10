@@ -20,24 +20,20 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Verify caller using a client authenticated with their JWT
-    const callerClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    // Use service role client for all server-side operations
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const { data: { user: caller }, error: authError } = await callerClient.auth.getUser();
+    // Verify caller by extracting JWT and validating via admin client
+    const jwt = authHeader.replace("Bearer ", "");
+    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(jwt);
     if (authError || !caller) {
       return new Response(JSON.stringify({ error: "Invalid authentication", detail: authError?.message }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    // Check caller is a manager (use service role to bypass RLS)
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const { data: callerProfile, error: profileError } = await adminClient
       .from("profiles")

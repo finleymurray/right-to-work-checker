@@ -1,5 +1,6 @@
 import { addRoute, setAuthGuard, navigate, initRouter } from './js/router.js';
 import { getSession, getUserProfile, isManager, onAuthStateChange, clearProfileCache } from './js/services/auth-service.js';
+import { bootstrapSSOSession } from './js/supabase-client.js';
 
 // Configure pdf.js worker
 if (typeof pdfjsLib !== 'undefined') {
@@ -281,8 +282,8 @@ onAuthStateChange((event, session) => {
   updateNavAuth(session);
 });
 
-// Initial nav update
-getSession().then(session => updateNavAuth(session));
-
-// Initialise
-initRouter(document.getElementById('app'));
+// Bootstrap SSO then initialise
+bootstrapSSOSession().then(() => {
+  getSession().then(session => updateNavAuth(session));
+  initRouter(document.getElementById('app'));
+});

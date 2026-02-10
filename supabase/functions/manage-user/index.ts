@@ -20,19 +20,24 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Use service role to verify caller's JWT and check role
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-    const jwt = authHeader.replace("Bearer ", "");
+    // Verify caller using a client authenticated with their JWT
+    const callerClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
-    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(jwt);
+    const { data: { user: caller }, error: authError } = await callerClient.auth.getUser();
     if (authError || !caller) {
-      return new Response(JSON.stringify({ error: "Invalid authentication" }), {
+      return new Response(JSON.stringify({ error: "Invalid authentication", detail: authError?.message }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Check caller is a manager (use service role to bypass RLS)
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const { data: callerProfile, error: profileError } = await adminClient
       .from("profiles")
@@ -102,6 +107,12 @@ Deno.serve(async (req: Request) => {
       await adminClient.from("audit_log").update({ user_id: null }).eq("user_id", user_id);
       await adminClient.from("rtw_records").update({ created_by: null }).eq("created_by", user_id);
       await adminClient.from("deleted_records").update({ deleted_by: null }).eq("deleted_by", user_id);
+      await adminClient.from("onboarding_records").update({ created_by: null }).eq("created_by", user_id);
+      await adminClient.from("training_sessions").update({ trainer_id: null }).eq("trainer_id", user_id);
+      await adminClient.from("training_sessions").update({ created_by: null }).eq("created_by", user_id);
+      await adminClient.from("training_assessments").update({ assessor_id: null }).eq("assessor_id", user_id);
+      await adminClient.from("training_assessments").update({ created_by: null }).eq("created_by", user_id);
+      await adminClient.from("training_modules").update({ created_by: null }).eq("created_by", user_id);
 
       // Delete from auth (cascades to profiles via ON DELETE CASCADE)
       const { error: deleteError } = await adminClient.auth.admin.deleteUser(user_id);

@@ -20,15 +20,13 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Verify caller identity and role
-    const callerClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    // Use service role to verify caller's JWT and check role
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+    const jwt = authHeader.replace("Bearer ", "");
 
-    const { data: { user: caller }, error: authError } = await callerClient.auth.getUser();
+    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(jwt);
     if (authError || !caller) {
       return new Response(JSON.stringify({ error: "Invalid authentication" }), {
         status: 401,
@@ -36,7 +34,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { data: callerProfile, error: profileError } = await callerClient
+    const { data: callerProfile, error: profileError } = await adminClient
       .from("profiles")
       .select("role")
       .eq("id", caller.id)
@@ -65,8 +63,6 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     if (action === "update_role") {
       if (!role || !["manager", "staff"].includes(role)) {

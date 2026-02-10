@@ -21,16 +21,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Create a client with the caller's JWT to check their role
+    // Use the service role key to verify the caller's JWT
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const callerClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const { data: { user: caller }, error: authError } = await callerClient.auth.getUser();
+    // Extract the JWT token from the Authorization header
+    const jwt = authHeader.replace("Bearer ", "");
+
+    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(jwt);
     if (authError || !caller) {
       return new Response(JSON.stringify({ error: "Invalid authentication" }), {
         status: 401,
@@ -39,7 +39,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // 2. Check the caller is a manager
-    const { data: profile, error: profileError } = await callerClient
+    const { data: profile, error: profileError } = await adminClient
       .from("profiles")
       .select("role")
       .eq("id", caller.id)
@@ -69,9 +69,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4. Create the user with the service role key
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-
+    // 4. Create the user with the admin client (already has service role key)
     const createOptions: Record<string, unknown> = {
       email,
       email_confirm: true,

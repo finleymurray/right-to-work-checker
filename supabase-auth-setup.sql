@@ -42,7 +42,7 @@ BEGIN
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'staff')
+    'staff'  -- Always assign staff; managers promote via separate endpoint (security: C3)
   );
   RETURN NEW;
 END;
@@ -54,32 +54,29 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- 5. Audit log trigger for rtw_records
+-- Audit trigger excludes sensitive fields from JSONB snapshots (security: C7)
 CREATE OR REPLACE FUNCTION public.audit_rtw_changes()
 RETURNS TRIGGER AS $$
+DECLARE
+  safe_new JSONB;
+  safe_old JSONB;
 BEGIN
+  safe_new := to_jsonb(NEW) - 'document_scan_path' - 'document_scan_filename' - 'share_code';
+  safe_old := to_jsonb(OLD) - 'document_scan_path' - 'document_scan_filename' - 'share_code';
   IF TG_OP = 'INSERT' THEN
     INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, new_values)
-    VALUES (
-      auth.uid(),
-      (SELECT email FROM profiles WHERE id = auth.uid()),
-      'create', 'rtw_records', NEW.id, to_jsonb(NEW)
-    );
+    VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
+            'create', 'rtw_records', NEW.id, safe_new);
     RETURN NEW;
   ELSIF TG_OP = 'UPDATE' THEN
     INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, old_values, new_values)
-    VALUES (
-      auth.uid(),
-      (SELECT email FROM profiles WHERE id = auth.uid()),
-      'update', 'rtw_records', NEW.id, to_jsonb(OLD), to_jsonb(NEW)
-    );
+    VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
+            'update', 'rtw_records', NEW.id, safe_old, safe_new);
     RETURN NEW;
   ELSIF TG_OP = 'DELETE' THEN
     INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, old_values)
-    VALUES (
-      auth.uid(),
-      (SELECT email FROM profiles WHERE id = auth.uid()),
-      'delete', 'rtw_records', OLD.id, to_jsonb(OLD)
-    );
+    VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
+            'delete', 'rtw_records', OLD.id, safe_old);
     RETURN OLD;
   END IF;
 END;
@@ -94,6 +91,16 @@ CREATE TRIGGER rtw_records_audit
 ALTER TABLE rtw_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+
+-- 6b. Log failed login attempts (security: M3)
+CREATE OR REPLACE FUNCTION public.log_failed_login(attempted_email TEXT, error_msg TEXT)
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO public.audit_log (user_id, user_email, action, table_name, new_values)
+  VALUES (NULL, attempted_email, 'failed_login', 'auth',
+    jsonb_build_object('error', error_msg, 'ip', current_setting('request.headers', true)::json->>'x-forwarded-for'));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 7. Helper function for role checks (avoids infinite recursion in RLS policies)
 CREATE OR REPLACE FUNCTION public.is_manager()
@@ -297,11 +304,12 @@ CREATE POLICY "managers_update_notifications"
   ON notifications FOR UPDATE TO authenticated
   USING (public.is_manager());
 
--- Any authenticated user can create notifications (sub-sites need this)
+-- Only managers can create notifications (security: C6)
 DROP POLICY IF EXISTS "auth_insert_notifications" ON notifications;
-CREATE POLICY "auth_insert_notifications"
+DROP POLICY IF EXISTS "managers_insert_notifications" ON notifications;
+CREATE POLICY "managers_insert_notifications"
   ON notifications FOR INSERT TO authenticated
-  WITH CHECK (true);
+  WITH CHECK (public.is_manager());
 
 -- ============================================================
 -- 12b. GDPR — Server-side auto-delete expired records (pg_cron)
@@ -601,24 +609,37 @@ CREATE POLICY "managers_delete_onboarding_scans" ON storage.objects
   FOR DELETE TO authenticated
   USING (bucket_id = 'onboarding-scans' AND public.is_manager());
 
--- Audit trigger for onboarding_records
+-- Audit trigger for onboarding_records — excludes sensitive PII (security: C7)
 CREATE OR REPLACE FUNCTION public.audit_onboarding_changes()
 RETURNS TRIGGER AS $$
+DECLARE
+  safe_new JSONB;
+  safe_old JSONB;
+  sensitive_keys TEXT[] := ARRAY['bank_sort_code', 'bank_account_number', 'bank_account_holder',
+    'ni_number', 'date_of_birth', 'address', 'mobile_number', 'medical_notes',
+    'personal_email', 'emergency_contact_phone'];
+  k TEXT;
 BEGIN
+  safe_new := to_jsonb(NEW);
+  safe_old := to_jsonb(OLD);
+  FOREACH k IN ARRAY sensitive_keys LOOP
+    safe_new := safe_new - k;
+    safe_old := safe_old - k;
+  END LOOP;
   IF TG_OP = 'INSERT' THEN
     INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, new_values)
     VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
-            'create', 'onboarding_records', NEW.id, to_jsonb(NEW));
+            'create', 'onboarding_records', NEW.id, safe_new);
     RETURN NEW;
   ELSIF TG_OP = 'UPDATE' THEN
     INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, old_values, new_values)
     VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
-            'update', 'onboarding_records', NEW.id, to_jsonb(OLD), to_jsonb(NEW));
+            'update', 'onboarding_records', NEW.id, safe_old, safe_new);
     RETURN NEW;
   ELSIF TG_OP = 'DELETE' THEN
     INSERT INTO public.audit_log (user_id, user_email, action, table_name, record_id, old_values)
     VALUES (auth.uid(), (SELECT email FROM profiles WHERE id = auth.uid()),
-            'delete', 'onboarding_records', OLD.id, to_jsonb(OLD));
+            'delete', 'onboarding_records', OLD.id, safe_old);
     RETURN OLD;
   END IF;
 END;

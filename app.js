@@ -51,7 +51,7 @@ addRoute('/record/:id', async (el, params) => {
 addRoute('/record/:id/edit', async (el, params) => {
   const { render } = await import('./js/views/record-form.js');
   await render(el, params.id);
-});
+}, { requiresManager: true });
 
 addRoute('/admin', async (el) => {
   const { render } = await import('./js/views/manager-dashboard.js');

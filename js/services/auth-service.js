@@ -102,6 +102,30 @@ export function onAuthStateChange(callback) {
 }
 
 /**
+ * Check if MFA verification is required for the current session.
+ */
+export async function checkMFA() {
+  const sb = getSupabase();
+  const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (data.currentLevel === 'aal1' && data.nextLevel === 'aal2') {
+    const factors = await sb.auth.mfa.listFactors();
+    const totp = factors.data.totp[0];
+    return { required: true, factorId: totp.id };
+  }
+  return { required: false, factorId: null };
+}
+
+/**
+ * Verify a TOTP MFA code.
+ */
+export async function verifyMFA(factorId, code) {
+  const sb = getSupabase();
+  const { data, error } = await sb.auth.mfa.challengeAndVerify({ factorId, code });
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Insert an audit log entry for auth events (login/logout) or other auditable actions.
  * @param {string} action - The action name (e.g. 'login', 'logout', 'export_excel', 'export_pdf')
  * @param {Object} [extra] - Optional extra fields (table_name, record_id, new_values)
